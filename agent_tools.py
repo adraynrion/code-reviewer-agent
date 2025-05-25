@@ -1,8 +1,13 @@
 """Tools for the code review agent to interact with GitHub/GitLab and analyze code."""
 
+import json
+import logging
 from typing import Any, Dict, List, Optional, TypedDict
 
 from pydantic import BaseModel
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 class FileDiff(TypedDict):
     """Represents a file's diff in a PR."""
@@ -399,43 +404,141 @@ async def detect_languages(
 
     return list(languages)
 
+async def analyze_with_llm(
+    deps: Any,
+    diff_content: str,
+    custom_instructions: str,
+    best_practices: str
+) -> List[Dict[str, Any]]:
+    """Send diff to LLM for analysis and return structured comments.
+
+    This function formats the diff and other context into a message for the agent.
+    The actual LLM call is handled by the agent's built-in prompt system.
+
+    Args:
+        deps: Dependency injection container with agent and context
+        diff_content: The raw diff content to analyze
+        custom_instructions: Custom review instructions
+        best_practices: Language-specific best practices
+
+    Returns:
+        List of review comment dictionaries
+    """
+    # Format the message for the agent
+    message = f"""
+    ## Code Diff to Review:
+    ```diff
+    {diff_content}
+    ```
+
+    Please provide your feedback as a JSON array of comment objects. Each comment should have:
+    - path: Relative file path
+    - line: Line number (1-based)
+    - body: The review comment (be specific and suggest fixes)
+    - side: 'RIGHT' for new code, 'LEFT' for old code
+    - severity: 'info'|'warning'|'error' (optional)
+    """.format(diff_content=diff_content)
+
+    try:
+        # Format the system prompt with the provided custom_instructions and best_practices
+        formatted_system_prompt = deps.agent.system_prompt.format(
+            custom_instructions=custom_instructions,
+            best_practices=best_practices
+        )
+
+        # Update the agent's system prompt with the formatted version
+        deps.agent.system_prompt = formatted_system_prompt
+
+        # Now run the agent with the diff content
+        response = await deps.agent.run(message, deps=deps)
+
+        # The response should be a string containing JSON
+        if not isinstance(response, str):
+            response = str(response)
+
+        # Extract JSON from markdown code block if present
+        if '```json' in response:
+            response = response.split('```json')[1].split('```')[0].strip()
+        elif '```' in response:
+            # Handle case where language isn't specified
+            response = response.split('```')[1].split('```')[0].strip()
+
+        comments = json.loads(response)
+        if not isinstance(comments, list):
+            raise ValueError("LLM response is not a list of comments")
+
+        return comments
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM response: {e}")
+        return [{
+            'path': 'review_error',
+            'line': 1,
+            'body': 'Failed to parse review comments. Please try again or check the logs.',
+            'side': 'RIGHT',
+            'severity': 'error'
+        }]
+    except Exception as e:
+        logger.exception("Error during LLM analysis")
+        return [{
+            'path': 'review_error',
+            'line': 1,
+            'body': f'Error generating review: {str(e)}',
+            'side': 'RIGHT',
+            'severity': 'error'
+        }]
+
+
 async def aggregate_review_comments(
     deps: Any,
     diff: PRDiffResponse,
     custom_instructions: str,
     best_practices: Dict[str, str],
-) -> List[ReviewComment]:
+) -> List[Dict[str, Any]]:
     """
     Generate review comments based on the diff, custom instructions, and best practices.
 
-    This is where the AI would analyze the code and generate comments.
-    In a real implementation, this would use an LLM to analyze the code.
+    This function uses the agent to analyze code changes and generate meaningful,
+    actionable review comments that help improve code quality.
 
     Args:
-        deps: The dependency injection container
-        diff: The PR diff
-        custom_instructions: Custom review instructions
-        best_practices: Language-specific best practices
+        deps: The dependency injection container with agent and logger
+        diff: The PR diff object containing file changes
+        custom_instructions: Custom review instructions for the agent
+        best_practices: Language-specific best practices to consider
 
     Returns:
-        List of review comments
+        List[Dict[str, Any]]: List of review comments with path, line, body, and side
     """
-    # This is a placeholder implementation
-    # In a real implementation, you would use an LLM to analyze the code
-    # and generate meaningful comments based on the diff, custom instructions, and best practices
-
+    # Process each file in the diff
     comments = []
 
-    # TODO: Implement review comment generation + replace prompt keywords
+    # Analyze the actual code changes
+    try:
+        diff_content = diff.raw_diff  # Assuming diff has a raw_diff attribute with the full diff text
+        if diff_content:
+            # Convert best_practices to string if it's a dictionary
+            best_practices_str = (
+                json.dumps(best_practices, indent=2)
+                if isinstance(best_practices, dict)
+                else best_practices
+            )
 
-    # Example: Add a comment for each file with changes
-    for file in diff.files:
-        if file['additions'] > 100:
-            comments.append({
-                'path': file['filename'],
-                'line': 1,
-                'body': 'This file has a large number of changes. Consider breaking it into smaller, more focused changes.',
-                'side': 'RIGHT'
-            })
+            file_comments = await analyze_with_llm(
+                deps=deps,
+                diff_content=diff_content,
+                custom_instructions=custom_instructions,
+                best_practices=best_practices_str
+            )
+            comments.extend(file_comments)
+    except Exception as e:
+        logger.exception("Error processing diff")
+        comments.append({
+            'path': 'review_error',
+            'line': 1,
+            'body': f'Error processing diff: {str(e)}',
+            'side': 'RIGHT',
+            'severity': 'error'
+        })
 
     return comments

@@ -36,6 +36,8 @@ class ReviewDeps:
     pr_id: int
     instructions_path: str
     log_level: str
+    openai_api_key: str  # OpenAI API key for the agent to use
+    agent: Any  # The agent instance that will handle LLM interactions
 
     # MCP Tool methods
     async def resolve_library_id(self, params: dict) -> dict:
@@ -50,20 +52,7 @@ class ReviewDeps:
         """Perform a web search using the Brave Search API"""
         return await search_web(params)
 
-code_review_agent = Agent(
-    "openai:gpt-4o-mini",
-    system_prompt=SYSTEM_PROMPT,
-    deps_type=ReviewDeps,
-    retries=2,
-)
-
-# Tool registrations
-code_review_agent.add_tool(get_pr_diff)
-code_review_agent.add_tool(post_review_comment)
-code_review_agent.add_tool(get_review_instructions)
-code_review_agent.add_tool(search_best_practices)
-code_review_agent.add_tool(detect_languages)
-code_review_agent.add_tool(aggregate_review_comments)
+# Agent will be created in the main function with the proper dependencies
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='AI Code Review Agent')
@@ -129,6 +118,29 @@ async def main():
     print(f"Starting code review for {platform.upper()} PR #{pr_id} in {repository}")
 
     async with httpx.AsyncClient() as http_client:
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not openai_api_key:
+            print("Error: OPENAI_API_KEY environment variable is required")
+            sys.exit(1)
+
+        # Create the agent instance with the base system prompt
+        # The actual system prompt with custom_instructions and best_practices will be set in analyze_with_llm
+        agent = Agent(
+            "openai:gpt-4.1-mini", # [LLM]: Use OpenAI "Codex" LLM (or similar) for code analysis
+            system_prompt=SYSTEM_PROMPT,
+            deps_type=ReviewDeps,
+            retries=2,
+        )
+
+        # Register tools
+        agent.add_tool(get_pr_diff)
+        agent.add_tool(post_review_comment)
+        agent.add_tool(get_review_instructions)
+        agent.add_tool(search_best_practices)
+        agent.add_tool(detect_languages)
+        agent.add_tool(aggregate_review_comments)
+
+        # Create dependencies with the agent
         deps = ReviewDeps(
             http_client=http_client,
             platform=platform,
@@ -138,10 +150,12 @@ async def main():
             pr_id=pr_id,
             instructions_path=instructions_path,
             log_level=log_level,
+            openai_api_key=openai_api_key,
+            agent=agent
         )
 
         # Run the agent
-        await code_review_agent.run("Review this pull request", deps=deps)
+        await agent.run("Review this pull request", deps=deps)
 
 if __name__ == "__main__":
     asyncio.run(main())
