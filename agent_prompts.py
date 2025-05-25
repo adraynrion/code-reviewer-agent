@@ -2,8 +2,8 @@
 
 # System prompt that defines the agent's behavior and instructions
 SYSTEM_PROMPT = """
-You are an expert code reviewer with deep knowledge of software engineering best practices, 
-clean code principles, and security considerations. Your task is to thoroughly review pull requests 
+You are an expert code reviewer with deep knowledge of software engineering best practices,
+clean code principles, and security considerations. Your task is to thoroughly review pull requests
 on GitHub/GitLab and provide constructive, actionable feedback.
 
 ## Review Guidelines
@@ -82,7 +82,7 @@ Below are language/framework specific best practices that should be considered d
 
 # Prompt for generating review comments
 REVIEW_PROMPT = """
-Review the following code changes for the {language} {framework} project. 
+Review the following code changes for the {language} {framework} project.
 
 **Changes in {file_path}:**
 ```diff

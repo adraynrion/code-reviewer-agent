@@ -55,13 +55,13 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
    ```
    # Required for GitHub
    GITHUB_TOKEN=your_github_token_here
-   
+
    # Required for GitLab
    # GITLAB_TOKEN=your_gitlab_token_here
-   
+
    # Repository in format 'owner/repo' (GitHub) or 'group/project' (GitLab)
    REPOSITORY=owner/repo
-   
+
    # OpenAI API Key (if using OpenAI models)
    # OPENAI_API_KEY=your_openai_api_key_here
    ```
@@ -73,7 +73,7 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
    ```bash
    # Basic usage
    python agent.py --pr-id 123
-   
+
    # Full options
    python agent.py \
      --pr-id 123 \
