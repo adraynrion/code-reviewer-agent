@@ -256,20 +256,89 @@ async def search_best_practices(
     framework: Optional[str] = None,
 ) -> str:
     """
-    Search for language/framework specific best practices.
+    Search and retrieve language/framework-specific best practices.
+
+    This function first uses Context7 MCP tools to search for official documentation
+    about best practices for the given language (and optional framework).
+    If such documentation is unavailable, it falls back to a generic web search.
 
     Args:
-        deps: The dependency injection container
-        language: The programming language to search for
-        framework: Optional framework (e.g., 'django', 'react')
+        deps: The dependency injection container with required methods:
+            - resolve_library_id: Resolves a library name to its Context7 ID
+            - get_library_docs: Retrieves documentation from Context7
+            - search_web: Performs a web search
+        language: The programming language to search for (e.g., 'python', 'javascript').
+        framework: Optional framework (e.g., 'django', 'react').
 
     Returns:
-        str: Best practices information
+        str: Best practices information in markdown format with source attribution.
     """
-    # In a real implementation, this would search the web or a knowledge base
-    # For now, return some placeholder text
-    # TODO: Implement best practices search
-    return f"Best practices for {language}{' with ' + framework if framework else ''} would be retrieved here."
+    def _format_search_query(lang: str, fw: Optional[str] = None) -> str:
+        return f"{lang} {fw}".strip() if fw else lang
+
+    search_query = _format_search_query(language, framework)
+    primary_error = None
+
+    # Try Context7 MCP first
+    try:
+        # Resolve library ID using the injected dependency
+        resolved_libs = await deps.resolve_library_id({"libraryName": search_query})
+        if not resolved_libs or not resolved_libs.get('libraries'):
+            raise ValueError(f"No libraries found for: {search_query}")
+
+        # Get the most relevant library from the search results
+        lib_id = resolved_libs['libraries'][0]['id']
+
+        # Fetch documentation using the injected dependency
+        docs = await deps.get_library_docs({
+            "context7CompatibleLibraryID": lib_id,
+            "tokens": 5000,
+            "topic": "best practices"
+        })
+
+        if not docs or 'content' not in docs or not docs['content'].strip():
+            raise ValueError("No content found in documentation")
+
+        # Format the response with source attribution
+        result = f"# Best Practices for {search_query.title()}\n\n"
+        result += docs['content'].strip()
+        result += f"\n\n*Documentation retrieved from {lib_id}*"
+        return result
+
+    except Exception as e:
+        primary_error = str(e)
+        # Fall through to web search
+
+    # Fallback to web search if Context7 fails
+    try:
+        fallback_query = f"{language} {framework} best practices" if framework else f"{language} best practices"
+        # Perform a web search using the injected search_web dependency
+        search_results = await deps.search_web({
+            "query": fallback_query,
+            "domain": "github.com"  # Focus on GitHub for code-related content
+        })
+
+        if search_results and search_results.get('results'):
+            result = f"# Best Practices for {fallback_query.title()}\n\n"
+            for i, item in enumerate(search_results['results'][:3], 1):
+                title = item.get('title', 'No title')
+                url = item.get('url', '#')
+                result += f"{i}. [{title}]({url})\n"
+                if 'snippet' in item:
+                    result += f"   {item['snippet']}\n\n"
+
+            if primary_error:
+                result += f"\n*Note: Fallback to web search (Context7 error: {primary_error})*"
+            return result
+
+        return f"No best practices found for '{fallback_query}'.\n\n(Context7 error: {primary_error or 'N/A'})"
+
+    except Exception as inner_error:
+        error_msg = f"Error retrieving best practices for {language}"
+        if framework:
+            error_msg += f" with {framework}"
+        error_msg += f" due to: {inner_error}"
+        return error_msg
 
 async def detect_languages(
     deps: Any,

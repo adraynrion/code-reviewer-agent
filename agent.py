@@ -17,6 +17,9 @@ from agent_tools import (
     search_best_practices,
     detect_languages,
     aggregate_review_comments,
+    mcp1_resolve_library_id,
+    mcp1_get_library_docs,
+    search_web,
 )
 from agent_prompts import SYSTEM_PROMPT
 
@@ -24,7 +27,7 @@ logfire.configure(send_to_logfire='if-token-present')
 
 @dataclass
 class ReviewDeps:
-    """Dependency holder for API clients and config for GitHub/GitLab"""
+    """Dependency holder for API clients, config for GitHub/GitLab and MCP tools"""
     http_client: httpx.AsyncClient
     platform: str  # 'github' or 'gitlab'
     github_token: str | None
@@ -33,6 +36,19 @@ class ReviewDeps:
     pr_id: int
     instructions_path: str
     log_level: str
+
+    # MCP Tool methods
+    async def resolve_library_id(self, params: dict) -> dict:
+        """Resolve a library name to its Context7 ID"""
+        return await mcp1_resolve_library_id(params)
+
+    async def get_library_docs(self, params: dict) -> dict:
+        """Retrieve documentation from Context7"""
+        return await mcp1_get_library_docs(params)
+
+    async def search_web(self, params: dict) -> dict:
+        """Perform a web search using the Brave Search API"""
+        return await search_web(params)
 
 code_review_agent = Agent(
     "openai:gpt-4o-mini",
@@ -85,7 +101,7 @@ def parse_arguments():
 
 async def main():
     args = parse_arguments()
-    
+
     github_token = os.getenv('GITHUB_TOKEN')
     gitlab_token = os.getenv('GITLAB_TOKEN')
     platform = args.platform or os.getenv('PLATFORM', 'github').lower()
@@ -97,19 +113,19 @@ async def main():
     if not repository:
         print("Error: Repository not specified. Use --repository or set REPOSITORY environment variable")
         sys.exit(1)
-        
+
     if platform not in ('github', 'gitlab'):
         print("Error: Invalid platform. Must be either 'github' or 'gitlab'")
         sys.exit(1)
-        
+
     if platform == 'github' and not github_token:
         print("Error: GITHUB_TOKEN environment variable is required when platform is 'github'")
         sys.exit(1)
-        
+
     if platform == 'gitlab' and not gitlab_token:
         print("Error: GITLAB_TOKEN environment variable is required when platform is 'gitlab'")
         sys.exit(1)
-        
+
     print(f"Starting code review for {platform.upper()} PR #{pr_id} in {repository}")
 
     async with httpx.AsyncClient() as http_client:
