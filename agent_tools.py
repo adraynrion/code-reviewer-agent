@@ -26,6 +26,103 @@ class PRDiffResponse(BaseModel):
     base_sha: str
     head_sha: str
 
+async def parse_unified_diff(diff_text: str) -> List[Dict[str, Any]]:
+    """
+    Parse a GitHub-provided unified diff into structured file diffs.
+
+    Args:
+        diff_text: The unified diff text from GitHub
+
+    Returns:
+        List of parsed file diffs with metadata
+    """
+    files = []
+    current_file = None
+    splited_diff_text = diff_text.split('\n')
+
+    for line in splited_diff_text:
+        # Start of a new file diff
+        if line.startswith('diff --git'):
+            # Process previous file if exists
+            if current_file is not None:
+                if 'patch' in current_file and isinstance(current_file['patch'], list):
+                    current_file['patch'] = '\n'.join(current_file['patch'])
+                files.append(current_file)
+
+            # Extract old and new file paths
+            parts = line.split()
+            old_path = parts[2][2:]  # Skip 'a/'
+            new_path = parts[3][2:]  # Skip 'b/'
+
+            # Determine file status
+            status = 'modified'
+            if old_path == '/dev/null':
+                status = 'added'
+            elif new_path == '/dev/null':
+                status = 'deleted'
+
+            # Determine filename
+            filename = old_path
+            if new_path != '/dev/null':
+                filename = new_path
+
+            # Determine previous filename
+            previous_filename = None
+            if old_path != '/dev/null':
+                previous_filename = old_path
+
+            current_file = {
+                'filename': filename,
+                'status': status,
+                'previous_filename': previous_filename,
+                'additions': 0,
+                'deletions': 0,
+                'patch': [],
+                'is_binary': False
+            }
+
+            # Check for binary file indicator in the next 5 lines
+            next_lines = splited_diff_text[splited_diff_text.index(line) + 1:splited_diff_text.index(line) + 5]
+            for l in next_lines:
+                if 'binary' in l.lower():
+                    current_file['is_binary'] = True
+                    break
+
+
+
+        # Parse diff metadata
+        elif line.startswith('index ') and current_file:
+            # Extract SHAs if available (format: index <base-sha>..<head-sha> <mode>)
+            parts = line.split()
+            if '..' in parts[1]:
+                base_sha, head_sha = parts[1].split('..')[:2]
+                current_file['base_sha'] = base_sha
+                current_file['head_sha'] = head_sha
+
+        # Parse hunk headers
+        elif line.startswith('@@ ') and current_file and not current_file['is_binary']:
+            current_file['patch'].append(line)
+
+        # Parse added/removed lines
+        elif current_file and not current_file['is_binary']:
+            if line.startswith('+') and not line.startswith('+++'):
+                current_file['additions'] += 1
+                current_file['patch'].append(line)
+            elif line.startswith('-') and not line.startswith('---'):
+                current_file['deletions'] += 1
+                current_file['patch'].append(line)
+            elif line.startswith(' '):
+                current_file['patch'].append(line)
+
+    # Add the last file if exists
+    if current_file:
+        # Convert patch list to string if needed
+        if 'patch' in current_file and isinstance(current_file['patch'], list):
+            current_file['patch'] = '\n'.join(current_file['patch'])
+        files.append(current_file)
+
+    return files
+
 async def get_pr_diff(
     deps: Any,
     repository: str,
@@ -43,47 +140,40 @@ async def get_pr_diff(
         PRDiffResponse containing the diff information
     """
     if deps.platform == 'github':
-        url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}"
+        # First, get the PR details to get the base and head SHAs
+        pr_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}"
         headers = {
             "Authorization": f"token {deps.github_token}",
-            "Accept": "application/vnd.github.v3.diff"
+            "Accept": "application/vnd.github.v3+json"
         }
-        async with deps.http_client.get(url, headers=headers) as response:
-            response.raise_for_status()
-            diff_text = response.text
-            # Parse diff text into structured format
-            # (simplified - in practice you'd want a proper diff parser)
-            # TODO: Implement diff parsing
-            files = []
-            current_file = None
-            for line in diff_text.split('\n'):
-                if line.startswith('diff --git'):
-                    if current_file:
-                        files.append(current_file)
-                    filename = line.split(' b/')[-1]
-                    current_file = {
-                        'filename': filename,
-                        'status': 'modified',  # Simplified
-                        'additions': 0,
-                        'deletions': 0,
-                        'patch': '',
-                        'previous_filename': None
-                    }
-                elif current_file and line.startswith('+'):
-                    current_file['additions'] += 1
-                    current_file['patch'] += line + '\n'
-                elif current_file and line.startswith('-'):
-                    current_file['deletions'] += 1
-                    current_file['patch'] += line + '\n'
 
-            if current_file:
-                files.append(current_file)
+        async with deps.http_client.get(pr_url, headers=headers) as pr_response:
+            pr_response.raise_for_status()
+            pr_data = pr_response.json()
+            base_sha = pr_data['base']['sha']
+            head_sha = pr_data['head']['sha']
 
-            return PRDiffResponse(
-                files=files,
-                base_sha='',  # Would come from API in real implementation
-                head_sha='',   # Would come from API in real implementation
-            )
+            # Get the raw diff
+            diff_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}.diff"
+            async with deps.http_client.get(diff_url, headers=headers) as diff_response:
+                diff_response.raise_for_status()
+                diff_text = diff_response.text
+
+                # Parse the diff
+                files = await parse_unified_diff(diff_text)
+
+                # Ensure all files have base and head SHAs
+                for file in files:
+                    if 'base_sha' not in file:
+                        file['base_sha'] = base_sha
+                    if 'head_sha' not in file:
+                        file['head_sha'] = head_sha
+
+                return PRDiffResponse(
+                    files=files,
+                    base_sha=base_sha,
+                    head_sha=head_sha,
+                )
     else:  # GitLab
         # TODO: Similar implementation for GitLab
         pass
