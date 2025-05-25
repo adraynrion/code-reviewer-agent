@@ -1,7 +1,9 @@
 from __future__ import annotations as _annotations
 
+import argparse
 import asyncio
 import os
+import sys
 from dataclasses import dataclass
 
 import httpx
@@ -47,25 +49,68 @@ code_review_agent.add_tool(search_best_practices)
 code_review_agent.add_tool(detect_languages)
 code_review_agent.add_tool(aggregate_review_comments)
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='AI Code Review Agent')
+    parser.add_argument(
+        '--pr-id',
+        type=int,
+        required=True,
+        help='Pull/Merge Request ID to review'
+    )
+    parser.add_argument(
+        '--repository',
+        type=str,
+        help='Repository in format owner/repo (overrides REPOSITORY env var)'
+    )
+    parser.add_argument(
+        '--platform',
+        type=str,
+        choices=['github', 'gitlab'],
+        help='Platform: github or gitlab (overrides PLATFORM env var)'
+    )
+    parser.add_argument(
+        '--instructions',
+        type=str,
+        default='review_instructions.md',
+        help='Path to custom review instructions file (default: review_instructions.md)'
+    )
+    parser.add_argument(
+        '--log-level',
+        type=str,
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='Logging level (default: INFO)'
+    )
+    return parser.parse_args()
+
 async def main():
+    args = parse_arguments()
+    
     github_token = os.getenv('GITHUB_TOKEN')
     gitlab_token = os.getenv('GITLAB_TOKEN')
-    platform = os.getenv('PLATFORM', 'github').lower()
-    repository = os.getenv('REPOSITORY')
-    pr_id = int(os.getenv('PR_ID', '0')) # TODO: Get PR ID from command line args
-    instructions_path = os.getenv('INSTRUCTIONS_PATH', 'review_instructions.md')
-    log_level = os.getenv('LOG_LEVEL', 'INFO')
+    platform = args.platform or os.getenv('PLATFORM', 'github').lower()
+    repository = args.repository or os.getenv('REPOSITORY')
+    pr_id = args.pr_id
+    instructions_path = args.instructions
+    log_level = args.log_level
 
     if not repository:
-        raise ValueError("REPOSITORY environment variable is required")
-    if not pr_id:
-        raise ValueError("PR_ID environment variable is required")
+        print("Error: Repository not specified. Use --repository or set REPOSITORY environment variable")
+        sys.exit(1)
+        
     if platform not in ('github', 'gitlab'):
-        raise ValueError("PLATFORM must be either 'github' or 'gitlab'")
+        print("Error: Invalid platform. Must be either 'github' or 'gitlab'")
+        sys.exit(1)
+        
     if platform == 'github' and not github_token:
-        raise ValueError("GITHUB_TOKEN is required when PLATFORM is 'github'")
+        print("Error: GITHUB_TOKEN environment variable is required when platform is 'github'")
+        sys.exit(1)
+        
     if platform == 'gitlab' and not gitlab_token:
-        raise ValueError("GITLAB_TOKEN is required when PLATFORM is 'gitlab'")
+        print("Error: GITLAB_TOKEN environment variable is required when platform is 'gitlab'")
+        sys.exit(1)
+        
+    print(f"Starting code review for {platform.upper()} PR #{pr_id} in {repository}")
 
     async with httpx.AsyncClient() as http_client:
         deps = ReviewDeps(

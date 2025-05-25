@@ -46,22 +46,64 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 1. **GitHub Setup**:
    - Create a Personal Access Token with `repo` scope
    - Set `GITHUB_TOKEN` in `.env`
-   - Set `PLATFORM=github`
 
 2. **GitLab Setup**:
    - Create a Personal Access Token with `api` scope
    - Set `GITLAB_TOKEN` in `.env`
-   - Set `PLATFORM=gitlab`
 
-3. **Repository Configuration**:
-   - Set `REPOSITORY` to `owner/repo` (GitHub) or `group/project` (GitLab)
-   - Set `PR_ID` to the pull/merge request number
+3. **Environment Variables** (`.env` file):
+   ```
+   # Required for GitHub
+   GITHUB_TOKEN=your_github_token_here
+   
+   # Required for GitLab
+   # GITLAB_TOKEN=your_gitlab_token_here
+   
+   # Repository in format 'owner/repo' (GitHub) or 'group/project' (GitLab)
+   REPOSITORY=owner/repo
+   
+   # OpenAI API Key (if using OpenAI models)
+   # OPENAI_API_KEY=your_openai_api_key_here
+   ```
 
 ## Usage
 
 1. Update `review_instructions.md` with your custom review guidelines
-2. Run the agent:
+2. Run the agent with the required PR ID:
    ```bash
+   # Basic usage
+   python agent.py --pr-id 123
+   
+   # Full options
+   python agent.py \
+     --pr-id 123 \
+     --repository owner/repo \
+     --platform github \
+     --instructions review_instructions.md \
+     --log-level INFO
+   ```
+
+### Command Line Arguments
+
+| Argument | Description | Required | Default |
+|----------|-------------|:--------:|:-------:|
+| `--pr-id` | Pull/Merge Request ID | ✅ | - |
+| `--repository` | Repository in format `owner/repo` (GitHub) or `group/project` (GitLab) | ❌ | Uses `REPOSITORY` env var |
+| `--platform` | Version control platform: `github` or `gitlab` | ❌ | Uses `PLATFORM` env var or `github` |
+| `--instructions` | Path to custom review instructions file | ❌ | `review_instructions.md` |
+| `--log-level` | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL | ❌ | `INFO` |
+
+### Environment Variables
+
+All command line arguments can be set via environment variables for convenience:
+
+- `REPOSITORY`
+- `PLATFORM`
+- `GITHUB_TOKEN`
+- `GITLAB_TOKEN`
+- `OPENAI_API_KEY`
+
+Command line arguments take precedence over environment variables.
    python agent.py
    ```
 

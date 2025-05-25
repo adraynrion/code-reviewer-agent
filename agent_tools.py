@@ -267,7 +267,7 @@ async def aggregate_review_comments(
 
     comments = []
 
-    # TODO: Implement review comment generation
+    # TODO: Implement review comment generation + replace prompt keywords
 
     # Example: Add a comment for each file with changes
     for file in diff.files:
