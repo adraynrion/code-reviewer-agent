@@ -389,7 +389,7 @@ async def detect_languages(
         'yml': 'YAML',
         'toml': 'TOML',
         'md': 'Markdown',
-        # TODO : Add vuejs
+        'vue': 'Vue.js',
     }
 
     languages = set()
