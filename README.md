@@ -59,11 +59,14 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
    # Required for GitLab
    # GITLAB_TOKEN=your_gitlab_token_here
 
-   # Repository in format 'owner/repo' (GitHub) or 'group/project' (GitLab)
+   # Required: Platform (github or gitlab)
+   PLATFORM=github
+
+   # Required: Repository in format 'owner/repo' for GitHub or 'group/project' for GitLab
    REPOSITORY=owner/repo
 
-   # OpenAI API Key (if using OpenAI models)
-   # OPENAI_API_KEY=your_openai_api_key_here
+   # OpenAI API Key
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
 ## Usage

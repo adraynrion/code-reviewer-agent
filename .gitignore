@@ -1,1 +1,7 @@
+# Files
 .env
+
+# Dependencies
+__pycache__
+.venv
+keys
