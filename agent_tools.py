@@ -2,34 +2,14 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
+from pydantic_ai import RunContext
 
-from pydantic import BaseModel
+from models import FileDiff, ReviewComment, PRDiffResponse
+from models.deps import ReviewDeps
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-class FileDiff(TypedDict):
-    """Represents a file's diff in a PR."""
-    filename: str
-    status: str  # 'added', 'modified', 'removed', 'renamed'
-    additions: int
-    deletions: int
-    patch: Optional[str]
-    previous_filename: Optional[str]
-
-class ReviewComment(TypedDict):
-    """Represents a comment on a PR."""
-    path: str
-    line: int
-    body: str
-    side: str = 'RIGHT'  # 'LEFT' or 'RIGHT' for GitHub, 'old' or 'new' for GitLab
-
-class PRDiffResponse(BaseModel):
-    """Response model for get_pr_diff."""
-    files: List[FileDiff]
-    base_sha: str
-    head_sha: str
 
 async def parse_unified_diff(diff_text: str) -> List[Dict[str, Any]]:
     """
@@ -129,7 +109,7 @@ async def parse_unified_diff(diff_text: str) -> List[Dict[str, Any]]:
     return files
 
 async def get_pr_diff(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     repository: str,
     pr_id: int,
 ) -> PRDiffResponse:
@@ -137,48 +117,47 @@ async def get_pr_diff(
     Get the diff for a pull request.
 
     Args:
-        deps: The dependency injection container
+        context: The dependency injection container
         repository: The repository in format 'owner/repo' or 'group/project' for GitLab
         pr_id: The pull/merge request number
 
     Returns:
         PRDiffResponse containing the diff information
     """
-    if deps.platform == 'github':
+    if context.deps.platform == 'github':
         # First, get the PR details to get the base and head SHAs
         pr_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}"
         headers = {
-            "Authorization": f"token {deps.github_token}",
+            "Authorization": f"token {context.deps.github_token}",
             "Accept": "application/vnd.github.v3+json"
         }
 
-        async with deps.http_client.get(pr_url, headers=headers) as pr_response:
-            pr_response.raise_for_status()
-            pr_data = pr_response.json()
-            base_sha = pr_data['base']['sha']
-            head_sha = pr_data['head']['sha']
+        # Get PR details
+        pr_response = await context.deps.http_client.get(pr_url, headers=headers)
+        pr_response.raise_for_status()
+        pr_data = pr_response.json()
+        base_sha = pr_data['base']['sha']
+        head_sha = pr_data['head']['sha']
 
-            # Get the raw diff
-            diff_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}.diff"
-            async with deps.http_client.get(diff_url, headers=headers) as diff_response:
-                diff_response.raise_for_status()
-                diff_text = diff_response.text
+        # Get the raw diff
+        diff_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}.diff"
+        diff_response = await context.deps.http_client.get(diff_url, headers=headers)
+        diff_response.raise_for_status()
+        diff_text = diff_response.text
 
-                # Parse the diff
-                files = await parse_unified_diff(diff_text)
+        # Parse the diff
+        files = await parse_unified_diff(diff_text)
 
-                # Ensure all files have base and head SHAs
-                for file in files:
-                    if 'base_sha' not in file:
-                        file['base_sha'] = base_sha
-                    if 'head_sha' not in file:
-                        file['head_sha'] = head_sha
+        # Ensure all files have base and head SHAs
+        for file in files:
+            file['base_sha'] = base_sha
+            file['head_sha'] = head_sha
 
-                return PRDiffResponse(
-                    files=files,
-                    base_sha=base_sha,
-                    head_sha=head_sha,
-                )
+        return PRDiffResponse(
+            files=[FileDiff(**f) for f in files],
+            base_sha=base_sha,
+            head_sha=head_sha
+        )
     else:  # GitLab
         # TODO: Similar implementation for GitLab
         pass
@@ -186,7 +165,7 @@ async def get_pr_diff(
     return PRDiffResponse(files=[], base_sha='', head_sha='')
 
 async def post_review_comment(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     repository: str,
     pr_id: int,
     comments: List[ReviewComment],
@@ -195,7 +174,7 @@ async def post_review_comment(
     Post review comments to a pull request.
 
     Args:
-        deps: The dependency injection container
+        context: The dependency injection container
         repository: The repository in format 'owner/repo' or 'group/project' for GitLab
         pr_id: The pull/merge request number
         comments: List of comments to post
@@ -203,31 +182,30 @@ async def post_review_comment(
     Returns:
         bool: True if comments were posted successfully
     """
-    if deps.platform == 'github':
+    if context.deps.platform == 'github':
         url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}/reviews"
         headers = {
-            "Authorization": f"token {deps.github_token}",
+            "Authorization": f"token {context.deps.github_token}",
             "Accept": "application/vnd.github.v3+json"
         }
 
-        # Convert comments to GitHub format
-        github_comments = [
-            {
-                "path": comment["path"],
-                "position": comment["line"],
-                "body": comment["body"]
-            }
-            for comment in comments
-        ]
+        github_comments = []
+        for comment in comments:
+            github_comments.append({
+                "path": comment.path,
+                "position": comment.line,
+                "body": comment.body,
+                "side": "RIGHT"
+            })
 
         payload = {
             "event": "COMMENT",
             "comments": github_comments
         }
 
-        async with deps.http_client.post(url, headers=headers, json=payload) as response:
-            response.raise_for_status()
-            return True
+        response = await context.deps.http_client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return True
     else:  # GitLab
         # TODO: Similar implementation for GitLab
         pass
@@ -235,14 +213,14 @@ async def post_review_comment(
     return False
 
 async def get_review_instructions(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     instructions_path: str,
 ) -> str:
     """
     Load custom review instructions from a markdown file.
 
     Args:
-        deps: The dependency injection container
+        context: The dependency injection container
         instructions_path: Path to the markdown file with review instructions
 
     Returns:
@@ -256,7 +234,7 @@ async def get_review_instructions(
         return ""
 
 async def search_best_practices(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     language: str,
     framework: Optional[str] = None,
 ) -> str:
@@ -268,7 +246,7 @@ async def search_best_practices(
     If such documentation is unavailable, it falls back to a generic web search.
 
     Args:
-        deps: The dependency injection container with required methods:
+        context: The dependency injection container with required methods:
             - resolve_library_id: Resolves a library name to its Context7 ID
             - get_library_docs: Retrieves documentation from Context7
             - search_web: Performs a web search
@@ -287,7 +265,7 @@ async def search_best_practices(
     # Try Context7 MCP first
     try:
         # Resolve library ID using the injected dependency
-        resolved_libs = await deps.resolve_library_id({"libraryName": search_query})
+        resolved_libs = await context.deps.resolve_library_id({"libraryName": search_query})
         if not resolved_libs or not resolved_libs.get('libraries'):
             raise ValueError(f"No libraries found for: {search_query}")
 
@@ -295,7 +273,7 @@ async def search_best_practices(
         lib_id = resolved_libs['libraries'][0]['id']
 
         # Fetch documentation using the injected dependency
-        docs = await deps.get_library_docs({
+        docs = await context.deps.get_library_docs({
             "context7CompatibleLibraryID": lib_id,
             "tokens": 5000,
             "topic": "best practices"
@@ -318,7 +296,7 @@ async def search_best_practices(
     try:
         fallback_query = f"{language} {framework} best practices" if framework else f"{language} best practices"
         # Perform a web search using the injected search_web dependency
-        search_results = await deps.search_web({
+        search_results = await context.deps.search_web({
             "query": fallback_query,
             "domain": "github.com"  # Focus on GitHub for code-related content
         })
@@ -346,14 +324,14 @@ async def search_best_practices(
         return error_msg
 
 async def detect_languages(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     files: List[FileDiff],
 ) -> List[str]:
     """
     Detect programming languages from file extensions in the diff.
 
     Args:
-        deps: The dependency injection container
+        context: The dependency injection container
         files: List of files in the diff
 
     Returns:
@@ -405,7 +383,7 @@ async def detect_languages(
     return list(languages)
 
 async def analyze_with_llm(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     diff_content: str,
     custom_instructions: str,
     best_practices: str
@@ -416,7 +394,7 @@ async def analyze_with_llm(
     The actual LLM call is handled by the agent's built-in prompt system.
 
     Args:
-        deps: Dependency injection container with agent and context
+        context: Dependency injection container with agent and context
         diff_content: The raw diff content to analyze
         custom_instructions: Custom review instructions
         best_practices: Language-specific best practices
@@ -441,16 +419,16 @@ async def analyze_with_llm(
 
     try:
         # Format the system prompt with the provided custom_instructions and best_practices
-        formatted_system_prompt = deps.agent.system_prompt.format(
+        formatted_system_prompt = context.deps.agent.system_prompt.format(
             custom_instructions=custom_instructions,
             best_practices=best_practices
         )
 
         # Update the agent's system prompt with the formatted version
-        deps.agent.system_prompt = formatted_system_prompt
+        context.deps.agent.system_prompt = formatted_system_prompt
 
         # Now run the agent with the diff content
-        response = await deps.agent.run(message, deps=deps)
+        response = await context.deps.agent.run(message, deps=context.deps)
 
         # The response should be a string containing JSON
         if not isinstance(response, str):
@@ -490,7 +468,7 @@ async def analyze_with_llm(
 
 
 async def aggregate_review_comments(
-    deps: Any,
+    context: RunContext[ReviewDeps],
     diff: PRDiffResponse,
     custom_instructions: str,
     best_practices: Dict[str, str],
@@ -515,7 +493,14 @@ async def aggregate_review_comments(
 
     # Analyze the actual code changes
     try:
-        diff_content = diff.raw_diff  # Assuming diff has a raw_diff attribute with the full diff text
+        # Convert the files to a formatted string for analysis
+        diff_content = "\n".join(
+            f"File: {file['filename']} ({file['status']})\n"
+            f"Additions: {file['additions']}, Deletions: {file['deletions']}\n"
+            f"{file.get('patch', 'No changes')}\n"
+            for file in diff.files
+        )
+        
         if diff_content:
             # Convert best_practices to string if it's a dictionary
             best_practices_str = (
@@ -525,7 +510,7 @@ async def aggregate_review_comments(
             )
 
             file_comments = await analyze_with_llm(
-                deps=deps,
+                context=context,
                 diff_content=diff_content,
                 custom_instructions=custom_instructions,
                 best_practices=best_practices_str
