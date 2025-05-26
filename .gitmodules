@@ -1,0 +1,3 @@
+[submodule "brave_mcp_search"]
+	path = brave_mcp_search
+	url = https://github.com/arben-adm/brave-mcp-search.git
