@@ -45,7 +45,7 @@ class ReviewDeps:
         self._request_id = 0
         self._mcp_brave = None  # Will be initialized lazily if needed
 
-    async def _get_mcp_process(self):
+    async def _get_context7_mcp_process(self):
         """Get or start the MCP server process"""
         if self._mcp_process is None or self._mcp_process.returncode is not None:
             # Start the Context7 MCP server
@@ -59,10 +59,10 @@ class ReviewDeps:
             await asyncio.sleep(1)
         return self._mcp_process
 
-    async def _send_mcp_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def _send_context7_mcp_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Send a JSON-RPC request to the MCP server"""
         try:
-            proc = await self._get_mcp_process()
+            proc = await self._get_context7_mcp_process()
             if proc.returncode is not None:
                 return {'error': 'MCP server process is not running'}
 
@@ -108,7 +108,7 @@ class ReviewDeps:
             request_params['version'] = params['version']
 
         # Send the request to the MCP server
-        result = await self._send_mcp_request('resolve-library-id', request_params)
+        result = await self._send_context7_mcp_request('resolve-library-id', request_params)
         if 'error' in result:
             return result
 
@@ -140,7 +140,7 @@ class ReviewDeps:
             request_params['topic'] = params['topic']
 
         # Send the request to the MCP server
-        result = await self._send_mcp_request('get-library-docs', request_params)
+        result = await self._send_context7_mcp_request('get-library-docs', request_params)
         if 'error' in result:
             return result
 
@@ -153,8 +153,61 @@ class ReviewDeps:
             }
         }
 
+    async def _get_brave_mcp_process(self):
+        """Get or start the Brave MCP server process"""
+        if not hasattr(self, '_brave_mcp_process') or self._brave_mcp_process.poll() is not None:
+            # Start the Brave MCP server
+            self._brave_mcp_process = await asyncio.create_subprocess_exec(
+                'uv', '--directory', 'brave_mcp_search/src', 'run', 'server.py',
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={
+                    **os.environ,
+                    'BRAVE_API_KEY': os.getenv('BRAVE_API_KEY', '')
+                }
+            )
+            # Wait a moment for the server to start
+            await asyncio.sleep(1)
+        return self._brave_mcp_process
+
+    async def _send_brave_mcp_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a JSON-RPC request to the Brave MCP server"""
+        try:
+            proc = await self._get_brave_mcp_process()
+            if proc.returncode is not None:
+                return {'error': 'Brave MCP server process is not running'}
+
+            # Prepare the JSON-RPC request
+            request = {
+                'jsonrpc': '2.0',
+                'id': str(uuid4()),
+                'method': method,
+                'params': params
+            }
+
+            # Send the request
+            request_json = json.dumps(request) + '\n'
+            proc.stdin.write(request_json.encode('utf-8'))
+            await proc.stdin.drain()
+
+            # Read the response
+            line = await proc.stdout.readline()
+            if not line:
+                return {'error': 'No response from Brave MCP server'}
+
+            response = json.loads(line.decode('utf-8').strip())
+            if 'error' in response:
+                return {'error': response['error']}
+            return response.get('result', {})
+
+        except json.JSONDecodeError:
+            return {'error': 'Failed to parse Brave MCP server response'}
+        except Exception as e:
+            return {'error': f'Brave MCP request failed: {str(e)}'}
+
     async def search_web(self, params: dict) -> dict:
-        """Perform a web search using the Brave Search API"""
+        """Perform a web search using the Brave Search API via MCP server"""
         try:
             # Check if we have a Brave API key
             brave_api_key = os.getenv('BRAVE_API_KEY')
@@ -169,19 +222,45 @@ class ReviewDeps:
             if not query:
                 return {'error': 'query parameter is required'}
 
-            # For now, return a placeholder response
-            # TODO: In a real implementation, you would make an HTTP request to the Brave Search API
-            return {
-                'error': 'Brave Search API integration not implemented',
-                'suggestion': 'Implement the Brave Search API integration using the BRAVE_API_KEY',
+            # Prepare search parameters
+            search_params = {
                 'query': query,
-                'results': []
+                'count': params.get('count', 5),  # Default to 5 results
+                'freshness': params.get('freshness'),
+                'country': params.get('country'),
+                'search_lang': params.get('search_lang'),
+                'ui_lang': params.get('ui_lang'),
+                'ui_location': params.get('ui_location'),
+                'offset': params.get('offset')
+            }
+
+            # Remove None values
+            search_params = {k: v for k, v in search_params.items() if v is not None}
+
+            # Send the search request to the Brave MCP server
+            result = await self._send_brave_mcp_request('brave_web_search', search_params)
+
+            if 'error' in result:
+                return {
+                    'error': f'Brave search failed: {result["error"]}',
+                    'query': query
+                }
+
+            # Format the results to match the expected format
+            return {
+                'results': result.get('results', []),
+                'query': query,
+                'count': len(result.get('results', [])),
+                'metadata': {
+                    'total_results': result.get('total_results', 0)
+                }
             }
 
         except Exception as e:
             return {
                 'error': f'Failed to perform web search: {str(e)}',
-                'suggestion': 'Check your BRAVE_API_KEY and internet connection'
+                'suggestion': 'Check your BRAVE_API_KEY and internet connection',
+                'query': params.get('query', '')
             }
 
 # Agent will be created in the main function with the proper dependencies

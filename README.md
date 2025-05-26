@@ -14,14 +14,21 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 
 - Python 3.8+
 - Git
+- Node.js 16+ and npm (for Brave MCP Search submodule)
 - GitHub/GitLab account with appropriate permissions
+- Brave Search API key (for web search functionality)
 
 ## Installation
 
-1. Clone the repository:
+1. Clone the repository with submodules:
    ```bash
-   git clone https://github.com/yourusername/code-reviewer-agent.git
+   git clone --recurse-submodules https://github.com/yourusername/code-reviewer-agent.git
    cd code-reviewer-agent
+   ```
+
+   If you already cloned without submodules, initialize them with:
+   ```bash
+   git submodule update --init --recursive
    ```
 
 2. Create and activate a virtual environment:
@@ -30,16 +37,43 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. Install dependencies:
+3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Copy the example environment file and update with your details:
+4. Install Python dependencies for the Brave MCP search module using uv:
+   ```bash
+   cd brave_mcp_search
+   uv pip install -r requirements.txt
+   cd ..
+   ```
+
+   Note: If you don't have `uv` installed, you can install it with:
+   ```bash
+   curl -sSf https://astral.sh/uv/install.sh | sh
+   ```
+
+5. Copy the example environment file and update with your details:
    ```bash
    cp .env.example .env
    # Edit .env with your tokens and repository information
    ```
+
+## Architecture
+
+The agent is built with a modular architecture that includes the following components:
+
+- **Main Agent**: Core functionality for code review and analysis
+- **Context7 MCP Integration**: For accessing library documentation and resolving library IDs
+- **Brave MCP Search**: Submodule for performing web searches using the Brave Search API
+
+### Submodules
+
+- `brave_mcp_search/`: Contains the Brave Search MCP server implementation
+  - Requires Node.js and npm
+  - Automatically started by the agent when needed
+  - Communicates via JSON-RPC over stdio
 
 ## Configuration
 
@@ -65,8 +99,11 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
    # Required: Repository in format 'owner/repo' for GitHub or 'group/project' for GitLab
    REPOSITORY=owner/repo
 
-   # OpenAI API Key
+   # OpenAI API Key (required for AI analysis)
    OPENAI_API_KEY=your_openai_api_key_here
+
+   # Brave Search API Key (required for web search functionality)
+   BRAVE_API_KEY=your_brave_api_key_here
    ```
 
 ## Usage
@@ -146,6 +183,18 @@ The agent automatically detects languages from file extensions. To add support f
 - **Rate Limiting**: If you hit API rate limits, wait before retrying
 - **File Not Found**: Ensure file paths in your configuration are correct
 - **Permission Issues**: Check repository access for the token being used
+- **Submodule Issues**: If you encounter issues with submodules:
+  ```bash
+  # Update all submodules
+  git submodule update --init --recursive
+
+  # If you need to force update submodules
+  git submodule update --init --recursive --force
+  ```
+- **Brave MCP Server**: If the Brave MCP server fails to start:
+  - Ensure Node.js and npm are installed
+  - Check that all dependencies are installed in the `brave_mcp_search` directory
+  - Verify the `BRAVE_API_KEY` is set correctly in your environment variables
 
 ## Contributing
 
