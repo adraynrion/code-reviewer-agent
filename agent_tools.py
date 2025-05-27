@@ -16,22 +16,20 @@ from langfuse_decorators import track_llm, track_tool
 # Configure logger
 logger = logging.getLogger(__name__)
 
-# Configure console logging for better CLI output
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console.setFormatter(formatter)
-logger.addHandler(console)
-logger.setLevel(logging.INFO)
+# Don't add handlers here - they'll be added by the main application
+# This prevents duplicate log messages when the module is imported multiple times
+if not logger.handlers:
+    console = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
 def log_info(message: str):
-    """Log an info message to both console and logger."""
-    print(f"[INFO] {message}")
+    """Log an info message to the logger."""
     logger.info(message)
 
 def log_error(message: str, exc_info=None):
-    """Log an error message to both console and logger."""
-    print(f"[ERROR] {message}")
+    """Log an error message to the logger."""
     logger.error(message, exc_info=exc_info)
 
 @track_tool(name="parse_unified_diff", metadata={"component": "diff_parsing"})

@@ -31,9 +31,24 @@ def setup_logging(log_level: str = 'INFO') -> None:
         log_level: Logging level as a string (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
     level = getattr(logging, log_level.upper(), logging.INFO)
-    logging.basicConfig(level=level)
+    
+    # Clear any existing handlers to avoid duplicate logs
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+    
+    # Set the log level for all loggers
     logging.getLogger().setLevel(level)
-    logger.setLevel(level)
+    
+    # Set log level for specific loggers if needed
+    for name in ['httpx', 'httpcore']:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
