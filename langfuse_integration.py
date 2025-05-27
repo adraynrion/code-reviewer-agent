@@ -1,6 +1,7 @@
 """Langfuse integration for the code review agent."""
 import os
 import json
+import uuid
 from datetime import datetime, timezone
 from langfuse import Langfuse
 from typing import Dict, Any, Optional, Union, List
@@ -21,7 +22,8 @@ class LangfuseTracer:
         self.host = host or os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
         self.langfuse = self._init_langfuse()
         self.trace = None
-        self.current_span = None
+        self.spans = {}  # Dictionary to store spans by their IDs
+        self.current_span = None  # For backward compatibility
 
     def _init_langfuse(self):
         """Initialize the Langfuse client."""
@@ -65,12 +67,14 @@ class LangfuseTracer:
             print(f"Warning: Failed to start trace: {e}")
             return trace_id
 
-    def start_span(self, name: str, metadata: Optional[Dict[str, Any]] = None):
+    def start_span(self, name: str, metadata: Optional[Dict[str, Any]] = None, span_id: Optional[str] = None):
         """Start a new span.
 
         Args:
             name: Name of the span
             metadata: Additional metadata for the span
+            span_id: Optional custom span ID. If not provided, a new UUID will be generated.
+
 
         Returns:
             str: The span ID
@@ -79,42 +83,80 @@ class LangfuseTracer:
             return None
 
         try:
-            self.current_span = self.trace.span(
-                CreateSpan(
-                    name=name,
-                    metadata=metadata or {},
-                    start_time=datetime.now(timezone.utc),
-                )
+            span = self.trace.span(
+                name=name,
+                metadata=metadata or {},
+                start_time=datetime.now(timezone.utc),
             )
-            return self.current_span.id
+            
+            # Generate a span ID if not provided
+            if span_id is None:
+                span_id = str(uuid.uuid4())
+            
+            # Store the span
+            self.spans[span_id] = span
+            self.current_span = span  # For backward compatibility
+            
+            return span_id
         except Exception as e:
             print(f"Warning: Failed to start Langfuse span: {e}")
             return None
 
-    def end_span(self, output: Any = None, metadata: Optional[Dict[str, Any]] = None):
-        """End the current span.
+    def end_span(self, output: Any = None, metadata: Optional[Dict[str, Any]] = None, span_id: Optional[str] = None, status: Optional[str] = None):
+        """End a span.
 
         Args:
             output: Output of the span (will be converted to string if not already)
             metadata: Additional metadata to add to the span
+            span_id: ID of the span to end. If None, ends the current_span (for backward compatibility)
+            status: Optional status of the span (e.g., 'SUCCESS', 'ERROR')
         """
-        if not self.langfuse or not self.current_span:
+        if not self.langfuse:
             return
 
         try:
-            # Convert output to string if it's a dictionary or list
-            if output is not None and not isinstance(output, str):
-                try:
-                    output = json.dumps(output, ensure_ascii=False)
-                except (TypeError, ValueError):
-                    output = str(output)
+            # Get the span to end
+            if span_id is not None:
+                span = self.spans.get(span_id)
+                if span is None:
+                    print(f"Warning: Span with ID {span_id} not found")
+                    return
+            elif self.current_span is not None:
+                span = self.current_span
+            else:
+                print("Warning: No span ID provided and no current span")
+                return
 
-            self.current_span.end(
-                output=output,
-                metadata=metadata or {},
-                end_time=datetime.now(timezone.utc),
-            )
-            self.current_span = None
+            # Prepare the end data
+            end_data = {
+                'metadata': metadata or {},
+                'end_time': datetime.now(timezone.utc),
+            }
+            
+            # Add output if provided
+            if output is not None:
+                if not isinstance(output, str):
+                    try:
+                        output = json.dumps(output, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        output = str(output)
+                end_data['output'] = output
+                
+            # Add status to metadata if provided
+            if status is not None:
+                end_data['metadata']['status'] = status
+
+            # End the span
+            span.end(**end_data)
+            
+            # Clean up
+            if span_id is not None and span_id in self.spans:
+                del self.spans[span_id]
+                
+            # Clear current_span if it matches the ended span
+            if self.current_span and hasattr(self.current_span, 'id') and self.current_span.id == getattr(span, 'id', None):
+                self.current_span = None
+                
         except Exception as e:
             print(f"Warning: Failed to end Langfuse span: {e}")
 
