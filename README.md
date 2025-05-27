@@ -8,6 +8,7 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 - **Custom Review Instructions**: Follows guidelines defined in `review_instructions.md`
 - **Language-Aware**: Provides feedback based on language-specific best practices
 - **Comprehensive Feedback**: Covers code quality, security, performance, and more
+- **Observability**: Built-in Langfuse integration for monitoring and analytics
 - **Easy Integration**: Simple setup with environment variables
 
 ## Prerequisites
@@ -17,6 +18,7 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 - Node.js 16+ and npm (for Brave MCP Search submodule)
 - GitHub/GitLab account with appropriate permissions
 - Brave Search API key (for web search functionality)
+- Langfuse account (for monitoring and analytics, optional but recommended)
 
 ## Installation
 
@@ -85,7 +87,14 @@ The agent is built with a modular architecture that includes the following compo
    - Create a Personal Access Token with `api` scope
    - Set `GITLAB_TOKEN` in `.env`
 
-3. **Environment Variables** (`.env` file):
+3. **Langfuse Setup (Optional but Recommended)**:
+   - Sign up at [Langfuse](https://cloud.langfuse.com)
+   - Create a new project
+   - Generate API keys in Project Settings > API Keys
+   - Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env`
+   - See [Langfuse Integration](./docs/langfuse_integration.md) for detailed instructions
+
+4. **Environment Variables** (`.env` file):
    ```
    # Required for GitHub
    GITHUB_TOKEN=your_github_token_here
@@ -98,6 +107,11 @@ The agent is built with a modular architecture that includes the following compo
 
    # Required: Repository in format 'owner/repo' for GitHub or 'group/project' for GitLab
    REPOSITORY=owner/repo
+   
+   # Optional: Langfuse Configuration
+   # LANGFUSE_PUBLIC_KEY=your_public_key_here
+   # LANGFUSE_SECRET_KEY=your_secret_key_here
+   # LANGFUSE_HOST=https://cloud.langfuse.com  # Optional: For self-hosted instances
 
    # OpenAI API Key (required for AI analysis)
    OPENAI_API_KEY=your_openai_api_key_here
@@ -168,6 +182,50 @@ Edit `review_instructions.md` to include your team's specific:
 The agent automatically detects languages from file extensions. To add support for additional languages:
 1. Update the `detect_languages` function in `agent_tools.py`
 2. Add language-specific best practices in the `search_best_practices` function
+
+## Monitoring and Observability
+
+The agent includes built-in integration with [Langfuse](https://langfuse.com) for comprehensive monitoring and observability. This integration provides:
+
+- **End-to-End Tracing**: Full trace of each code review request from start to finish
+- **LLM Monitoring**: Detailed tracking of all LLM interactions, including inputs, outputs, and token usage
+- **Tool Usage**: Performance metrics for all tool calls and their execution times
+- **Error Tracking**: Centralized error tracking with stack traces and context
+- **Custom Metrics**: Custom events and metrics for monitoring specific aspects of the review process
+
+### Key Features
+
+- **Real-time Monitoring**: View traces and metrics in real-time as reviews are processed
+- **Performance Analysis**: Identify bottlenecks and optimize performance
+- **Error Analysis**: Quickly diagnose and fix issues with detailed error reports
+- **Custom Dashboards**: Create custom dashboards to monitor the metrics that matter most to you
+
+### Getting Started with Langfuse
+
+1. **Set Up Langfuse**:
+   - Sign up at [Langfuse](https://cloud.langfuse.com)
+   - Create a new project
+   - Navigate to Project Settings > API Keys to get your credentials
+
+2. **Configure the Agent**:
+   Add your Langfuse credentials to the `.env` file:
+   ```
+   LANGFUSE_PUBLIC_KEY=your_public_key_here
+   LANGFUSE_SECRET_KEY=your_secret_key_here
+   # Optional: For self-hosted instances
+   # LANGFUSE_HOST=https://your-langfuse-instance.com
+   ```
+
+3. **View Traces**:
+   - Log in to your Langfuse dashboard
+   - Navigate to the "Traces" section to view all code review requests
+   - Filter and search for specific traces using metadata and tags
+
+4. **Set Up Alerts** (Optional):
+   - Configure alerts for error rates, latency, or other metrics
+   - Receive notifications via email, Slack, or other integrations
+
+For more detailed information, see the [Langfuse Integration](./docs/langfuse_integration.md) documentation.
 
 ## Best Practices
 
