@@ -35,8 +35,8 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 
 2. Create and activate a virtual environment:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
 3. Install Python dependencies:
@@ -107,7 +107,7 @@ The agent is built with a modular architecture that includes the following compo
 
    # Required: Repository in format 'owner/repo' for GitHub or 'group/project' for GitLab
    REPOSITORY=owner/repo
-   
+
    # Optional: Langfuse Configuration
    # LANGFUSE_PUBLIC_KEY=your_public_key_here
    # LANGFUSE_SECRET_KEY=your_secret_key_here
