@@ -9,11 +9,10 @@ from rich.console import Console
 from rich.live import Live
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.mcp import MCPServerStdio
 
 from configure_langfuse import configure_langfuse
+from agent_model import get_model
 
 load_dotenv()
 
@@ -28,14 +27,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--mode', type=str, choices=['full', 'single-page'], default='single-page',
                        help='Force the crawling of the only page sent (single-page - default) or will follow all the links of the page (full)')
     return parser.parse_args()
-
-# ========== Helper function to get model configuration ==========
-def get_model():
-    llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
-    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
-    api_key = os.getenv('OPENAI_API_KEY', 'no-api-key-provided')
-
-    return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
 
