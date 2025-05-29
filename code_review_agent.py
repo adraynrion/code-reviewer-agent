@@ -3,7 +3,7 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
-from agent_prompts import REVIEW_PROMPT
+from agent_prompts import MANAGER_PROMPT, USER_PROMPT, REVIEW_PROMPT
 from contextlib import AsyncExitStack
 
 from rich.markdown import Markdown
@@ -21,6 +21,7 @@ load_dotenv()
 
 # Configure Langfuse for agent observability
 tracer = configure_langfuse()
+chunk_size = 1000
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -39,21 +40,34 @@ def parse_arguments() -> argparse.Namespace:
 def get_model():
     llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
-    api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
+    api_key = os.getenv('OPENAI_API_KEY', 'no-api-key-provided')
 
     return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
 
-# Brave Search MCP server
-brave_server = MCPServerStdio(
-    'npx', ['-y', '@modelcontextprotocol/server-brave-search'],
-    env={"BRAVE_API_KEY": os.getenv('BRAVE_API_KEY', '')}
-)
-
 # Filesystem MCP server
 filesystem_server = MCPServerStdio(
     'npx', ['-y', '@modelcontextprotocol/server-filesystem', os.getenv('LOCAL_FILE_DIR', '')]
+)
+
+# Crawl4ai MCP server
+crawl4ai_server = MCPServerStdio(
+    'docker',
+    [
+        'run', '--rm', '-i',
+        '-e', 'TRANSPORT',
+        '-e', 'OPENAI_API_KEY',
+        '-e', 'SUPABASE_URL',
+        '-e', 'SUPABASE_SERVICE_KEY',
+        'mcp/crawl4ai-rag'
+    ],
+    {
+        'TRANSPORT': 'stdio',
+        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
+        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
+        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', '')
+    }
 )
 
 git_platform = os.getenv('PLATFORM', 'github')
@@ -74,27 +88,25 @@ elif git_platform == 'gitlab':
         }
     )
 
-# Firecrawl MCP server
-firecrawl_server = MCPServerStdio(
-    'npx', ['-y', 'firecrawl-mcp'],
-    env={"FIRECRAWL_API_KEY": os.getenv('FIRECRAWL_API_KEY', '')}
-)
-
 # ========== Create subagents with their MCP servers ==========
 
-# Brave search agent
-brave_agent = Agent(
+# Custom instructions retriever agent
+filesystem_instructions_retriever_agent = Agent(
     get_model(),
-    system_prompt="You are a web search specialist using Brave Search. Find relevant information on the web.",
-    mcp_servers=[brave_server],
+    system_prompt="""
+    You are a file system files retriever agent. Help retrieve the related information from the files for the code review.
+    """,
+    mcp_servers=[filesystem_server],
     instrument=True
 )
 
-# Filesystem agent
-filesystem_agent = Agent(
+# Crawl4ai agent
+crawl4ai_agent = Agent(
     get_model(),
-    system_prompt="You are a filesystem specialist. You retrieve all the files content in the directory of the User to provide complementary instructions for the code review.",
-    mcp_servers=[filesystem_server],
+    system_prompt="""
+    You are a vector database documentation retriever agent. Help retrieve the related documentation based on the languages of the code to review from the vector database.
+    """,
+    mcp_servers=[crawl4ai_server],
     instrument=True
 )
 
@@ -102,23 +114,24 @@ filesystem_agent = Agent(
 repository_agent = Agent(
     get_model(),
     system_prompt=(
-        "You are a GitHub/GitLab specialist. Help users interact with its repositories and features.",
-        "You are the only one able to create the issue(s) on the PR/MR following the code review."
+        "You are a GitHub/GitLab specialist. Help users interact with its repositories and features. You are the only one able to create the issue(s) on the PR/MR following the code review."
     ),
     mcp_servers=[repository_server],
     instrument=True
 )
 
-# Firecrawl agent
-firecrawl_agent = Agent(
+# ========== Create the code reviewer agents ==========
+contextual_chunk_writer_agent = Agent(
     get_model(),
-    system_prompt="You are a web crawling specialist. Help users extract data from websites.",
-    mcp_servers=[firecrawl_server],
+    system_prompt=f"""
+        You are a contextual chunk writer agent. Help split the file diff by chunks of ~{chunk_size} tokens with additional context for the next agents processing.
+        The user will provide the whole document to split into chunks.
+        Please give a short succinct context to situate this chunk within the overall document for the purposes of improving understanding of the chunk.
+        Answer only with the chunks of the document with the additional context for each chunk and nothing else.
+    """,
     instrument=True
 )
-
-# ========== Create the code reviewer agents ==========
-review_agent = Agent(
+reviewer_agent = Agent(
     get_model(),
     system_prompt=REVIEW_PROMPT,
     instrument=True
@@ -127,45 +140,44 @@ review_agent = Agent(
 # ========== Create the primary orchestration agent ==========
 primary_agent = Agent(
     get_model(),
-    system_prompt="""You are a primary orchestration agent that can call upon specialized subagents
-    to perform various tasks. Each subagent is an expert in interacting with a specific third-party service.
-    Analyze the user request and delegate the work to the appropriate subagent.""",
+    system_prompt=MANAGER_PROMPT,
     instrument=True
 )
 
 # ========== Define tools for the primary agent to call subagents ==========
+
 @primary_agent.tool_plain
-async def use_brave_search_agent(query: str) -> dict[str, str]:
+async def use_filesystem_instructions_retriever_agent(query: str) -> dict[str, str]:
     """
-    Search the web using Brave Search through the Brave subagent.
-    Use this tool when the user needs to find information on the internet or research a topic.
+    Interact with the filesystem instructions retriever agent.
+    Use this tool to list and retrieve all the files content in the instructions folder.
 
     Args:
         ctx: The run context.
-        query: The search query or instruction for the Brave search agent.
+        query: The instruction for the filesystem instructions retriever agent.
 
     Returns:
-        The search results or response from the Brave agent.
+        The response from the filesystem instructions retriever agent.
     """
-    print(f"Calling Brave agent with query: {query}")
-    result = await brave_agent.run(query)
+    print(f"Calling filesystem instructions retriever agent with query: {query}")
+    result = await filesystem_instructions_retriever_agent.run(query)
     return {"result": result.data}
 
 @primary_agent.tool_plain
-async def use_filesystem_agent(query: str) -> dict[str, str]:
+async def use_crawl4ai_agent(query: str) -> dict[str, str]:
     """
-    Interact with the file system through the filesystem subagent.
-    Use this tool when the user needs to read, write, list, or modify files.
+    Interact with the crawl4ai agent.
+    Use this tool to retrieve the related documentation based on the languages of the code to review from the vector database.
 
     Args:
         ctx: The run context.
-        query: The instruction for the filesystem agent.
+        query: The instruction for the crawl4ai agent.
 
     Returns:
-        The response from the filesystem agent.
+        The response from the crawl4ai agent.
     """
-    print(f"Calling Filesystem agent with query: {query}")
-    result = await filesystem_agent.run(query)
+    print(f"Calling crawl4ai agent with query: {query}")
+    result = await crawl4ai_agent.run(query)
     return {"result": result.data}
 
 @primary_agent.tool_plain
@@ -173,6 +185,7 @@ async def use_git_repository_agent(query: str) -> dict[str, str]:
     """
     Interact with GitHub or GitLab through the Git repository subagent.
     Use this tool when the user needs to access repositories, issues, PRs, or other Git resources.
+    Additionnally, this tool can be used to create issues on the PR/MR following the code review.
 
     Args:
         ctx: The run context.
@@ -186,27 +199,26 @@ async def use_git_repository_agent(query: str) -> dict[str, str]:
     return {"result": result.data}
 
 @primary_agent.tool_plain
-async def use_firecrawl_agent(query: str) -> dict[str, str]:
-    """
-    Crawl and analyze websites using the Firecrawl subagent.
-    Use this tool when the user needs to extract data from websites or perform web scraping.
+async def use_contextual_chunk_writer_agent(query: str) -> dict[str, str]:
+    f"""
+    Use this tool to split the file diff by chunks of ~{chunk_size} tokens with additional context for the next agents processing.
 
     Args:
         ctx: The run context.
-        query: The instruction for the Firecrawl agent.
+        query: The whole file content to split into chunks.
 
     Returns:
-        The response from the Firecrawl agent.
+        The chunks of the file content with additional context for each chunk.
     """
-    print(f"Calling Firecrawl agent with query: {query}")
-    result = await firecrawl_agent.run(query)
+    print(f"Calling Contextual Chunk Writer agent with query: {query}")
+    result = await contextual_chunk_writer_agent.run(query)
     return {"result": result.data}
 
 @primary_agent.tool_plain
 async def use_reviewer_agent(query: str) -> dict[str, str]:
     """
-    Review any diff of code using the reviewer subagent.
-    Use this tool when the user needs to review a diff of code.
+    Use this tool to review any code diff using the reviewer subagent.
+    Compile the file name, the code diff, the custom user instructions and the code language documentation to review the code diff.
 
     Args:
         ctx: The run context.
@@ -216,7 +228,7 @@ async def use_reviewer_agent(query: str) -> dict[str, str]:
         The response from the reviewer agent.
     """
     print(f"Calling Reviewer agent with query: {query}")
-    result = await review_agent.run(query)
+    result = await reviewer_agent.run(query)
     return {"result": result.data}
 
 # ========== Main execution function ==========
@@ -260,15 +272,15 @@ async def main():
     async with AsyncExitStack() as stack:
         # Start all the subagent MCP servers
         print("Starting MCP servers...")
-        await stack.enter_async_context(brave_agent.run_mcp_servers())
-        await stack.enter_async_context(filesystem_agent.run_mcp_servers())
+        await stack.enter_async_context(filesystem_instructions_retriever_agent.run_mcp_servers())
+        await stack.enter_async_context(crawl4ai_agent.run_mcp_servers())
         await stack.enter_async_context(repository_agent.run_mcp_servers())
-        await stack.enter_async_context(firecrawl_agent.run_mcp_servers())
-        await stack.enter_async_context(review_agent.run_mcp_servers())
+        await stack.enter_async_context(contextual_chunk_writer_agent.run_mcp_servers())
+        await stack.enter_async_context(reviewer_agent.run_mcp_servers())
         print("All MCP servers started successfully!")
 
         console = Console()
-        user_input = f"Review pull request #{pr_id} in {repository} and create issues on it following the code review."
+        user_input = USER_PROMPT.format(pr_id=pr_id, repository=repository)
 
         try:
             # Configure the metadata for the Langfuse tracing

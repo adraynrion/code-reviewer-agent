@@ -1,12 +1,13 @@
 # AI Code Review Agent
 
-An intelligent code review agent that analyzes pull requests on GitHub and GitLab, providing detailed feedback based on custom review instructions and language-specific best practices.
+An intelligent code review agent that analyzes pull requests on GitHub and GitLab, providing detailed feedback based on custom review instructions and language-specific best practices. Also includes a web crawler agent for documentation processing.
 
 ## Features
 
 - **Multi-Platform Support**: Works with both GitHub and GitLab
 - **Modular Architecture**: Built using Model Context Protocol (MCP) for extensibility
-- **Specialized Agents**: Dedicated agents for different tasks (search, filesystem, Git, web crawling, code review)
+- **Specialized Agents**: Dedicated agents for different tasks (repository operations, filesystem, code review, documentation processing)
+- **Vector Database Integration**: Stores and retrieves documentation using Supabase
 - **Observability**: Built-in Langfuse integration for monitoring and analytics
 - **Environment-based Configuration**: Simple setup with environment variables
 
@@ -56,11 +57,10 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 The agent is built with a modular architecture using the Model Context Protocol (MCP) with the following components:
 
 - **Primary Agent**: Coordinates the review process and delegates to specialized agents
-- **Brave Search Agent**: Performs web searches using Brave Search API
-- **Filesystem Agent**: Interacts with the local filesystem
 - **Repository Agent**: Handles Git repository operations (GitHub/GitLab)
-- **Firecrawl Agent**: Web crawling and content extraction
+- **Filesystem Agent**: Interacts with the local filesystem
 - **Reviewer Agent**: Specialized in code review and analysis
+- **Crawler Agent**: Web crawler for processing documentation websites and storing in vector database
 
 ## Configuration
 
@@ -81,15 +81,13 @@ GITHUB_TOKEN=your_github_token_here
 # GITLAB_API_URL=https://gitlab.com/api/v4  # For self-hosted GitLab
 
 # LLM Configuration
-LLM_API_KEY=your_openai_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
 MODEL_CHOICE=gpt-4.1-mini  # or your preferred model
 BASE_URL=https://api.openai.com/v1  # For OpenAI-compatible APIs
 
-# Brave Search API Key (required for web search)
-BRAVE_API_KEY=your_brave_api_key_here
-
-# Firecrawl API Key (required for web crawling)
-FIRECRAWL_API_KEY=your_firecrawl_api_key_here
+# Crawler Configuration (for documentation processing)
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_SERVICE_KEY=your_supabase_service_key_here
 
 # Langfuse Configuration (optional)
 # LANGFUSE_PUBLIC_KEY=your_public_key_here
@@ -99,13 +97,15 @@ FIRECRAWL_API_KEY=your_firecrawl_api_key_here
 
 ## Usage
 
-Run the agent with the required PR ID:
+### Code Review Agent
+
+Run the code review agent with the required PR ID:
 
 ```bash
-python agent.py --pr-id 123
+python code_review_agent.py --pr-id 123
 ```
 
-### Command Line Arguments
+#### Code Review Agent Command Line Arguments
 
 | Argument | Description | Required | Default |
 |----------|-------------|:--------:|:-------:|
@@ -113,6 +113,23 @@ python agent.py --pr-id 123
 | `--repository` | Repository in format `owner/repo` | ❌ | Uses `REPOSITORY` env var |
 | `--platform` | Version control platform: `github` or `gitlab` | ❌ | Uses `PLATFORM` env var or `github` |
 | `--instructions-path` | Path to custom instructions folder | ❌ | `instructions` |
+
+### Crawler Agent
+
+The crawler agent processes documentation websites and stores the content in a vector database for later retrieval.
+
+```bash
+python crawler_agent.py --doc-url https://example.com/docs
+```
+
+#### Crawler Agent Command Line Arguments
+
+| Argument | Description | Required | Default |
+|----------|-------------|:--------:|:-------:|
+| `--doc-url` | URL of the documentation to crawl | ✅ | - |
+| `--mode` | Crawling mode: `single-page` or `full` | ❌ | `single-page` |
+
+In `single-page` mode, only the specified URL will be crawled. In `full` mode, the crawler will follow all links from the starting page.
 
 ## Monitoring and Observability
 
