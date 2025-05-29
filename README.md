@@ -81,7 +81,8 @@ GITHUB_TOKEN=your_github_token_here
 # GITLAB_API_URL=https://gitlab.com/api/v4  # For self-hosted GitLab
 
 # LLM Configuration
-OPENAI_API_KEY=your_openai_api_key_here
+LLM_API_KEY=your_llm_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here # For Crawler AI Agent only
 MODEL_CHOICE=gpt-4.1-mini  # or your preferred model
 BASE_URL=https://api.openai.com/v1  # For OpenAI-compatible APIs
 

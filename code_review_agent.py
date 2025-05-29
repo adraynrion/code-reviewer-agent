@@ -3,9 +3,10 @@ import asyncio
 import os
 
 from dotenv import load_dotenv
+
+from agent_model import get_model
 from agent_prompts import MANAGER_PROMPT, USER_PROMPT, REVIEW_PROMPT
 from contextlib import AsyncExitStack
-from agent_model import get_model
 
 from rich.markdown import Markdown
 from rich.console import Console
@@ -39,7 +40,8 @@ def parse_arguments() -> argparse.Namespace:
 
 # Filesystem MCP server
 filesystem_server = MCPServerStdio(
-    'npx', ['-y', '@modelcontextprotocol/server-filesystem', os.getenv('LOCAL_FILE_DIR', '')]
+    'npx', ['-y', '@modelcontextprotocol/server-filesystem', os.getenv('LOCAL_FILE_DIR', '')],
+    tool_prefix='filesystem',
 )
 
 # Crawl4ai MCP server
@@ -58,7 +60,8 @@ crawl4ai_server = MCPServerStdio(
         'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
         'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
         'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', '')
-    }
+    },
+    tool_prefix='crawl4ai',
 )
 
 git_platform = os.getenv('PLATFORM', 'github')
@@ -67,7 +70,8 @@ if git_platform == 'github':
     # GitHub MCP server
     repository_server = MCPServerStdio(
         'npx', ['-y', '@modelcontextprotocol/server-github'],
-        env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv('GITHUB_TOKEN', '')}
+        env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv('GITHUB_TOKEN', '')},
+        tool_prefix='github',
     )
 elif git_platform == 'gitlab':
     # Gitlab MCP server
@@ -76,7 +80,8 @@ elif git_platform == 'gitlab':
         env={
             "GITLAB_PERSONAL_ACCESS_TOKEN": os.getenv('GITLAB_TOKEN', ''),
             "GITLAB_API_URL": os.getenv('GITLAB_API_URL', 'https://gitlab.com/api/v4'),
-        }
+        },
+        tool_prefix='gitlab',
     )
 
 # ========== Create subagents with their MCP servers ==========
@@ -154,7 +159,7 @@ async def use_filesystem_instructions_retriever_agent(query: str) -> dict[str, s
     """
     print(f"Calling filesystem instructions retriever agent with query: {query}")
     result = await filesystem_instructions_retriever_agent.run(query)
-    return {"result": result.data}
+    return {"result": result.output}
 
 @primary_agent.tool_plain
 async def use_crawl4ai_agent(query: str) -> dict[str, str]:
@@ -171,7 +176,7 @@ async def use_crawl4ai_agent(query: str) -> dict[str, str]:
     """
     print(f"Calling crawl4ai agent with query: {query}")
     result = await crawl4ai_agent.run(query)
-    return {"result": result.data}
+    return {"result": result.output}
 
 @primary_agent.tool_plain
 async def use_git_repository_agent(query: str) -> dict[str, str]:
@@ -189,7 +194,7 @@ async def use_git_repository_agent(query: str) -> dict[str, str]:
     """
     print(f"Calling Git repository agent with query: {query}")
     result = await repository_agent.run(query)
-    return {"result": result.data}
+    return {"result": result.output}
 
 @primary_agent.tool_plain
 async def use_contextual_chunk_writer_agent(query: str) -> dict[str, str]:
@@ -205,7 +210,7 @@ async def use_contextual_chunk_writer_agent(query: str) -> dict[str, str]:
     """
     print(f"Calling Contextual Chunk Writer agent with query: {query}")
     result = await contextual_chunk_writer_agent.run(query)
-    return {"result": result.data}
+    return {"result": result.output}
 
 @primary_agent.tool_plain
 async def use_reviewer_agent(query: str) -> dict[str, str]:
@@ -222,7 +227,7 @@ async def use_reviewer_agent(query: str) -> dict[str, str]:
     """
     print(f"Calling Reviewer agent with query: {query}")
     result = await reviewer_agent.run(query)
-    return {"result": result.data}
+    return {"result": result.output}
 
 # ========== Main execution function ==========
 
@@ -297,4 +302,9 @@ async def main():
             return 1
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[Info] Code review process interrupted by user.")
+    except Exception as e:
+        print(f"\n[Error] An unexpected error occurred: {str(e)}")
