@@ -5,14 +5,13 @@ import os
 from dotenv import load_dotenv
 from agent_prompts import MANAGER_PROMPT, USER_PROMPT, REVIEW_PROMPT
 from contextlib import AsyncExitStack
+from agent_model import get_model
 
 from rich.markdown import Markdown
 from rich.console import Console
 from rich.live import Live
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.mcp import MCPServerStdio
 
 from configure_langfuse import configure_langfuse
@@ -35,14 +34,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--instructions-path', type=str, default='instructions',
                        help='Path to custom review instructions folder (default: instructions)')
     return parser.parse_args()
-
-# ========== Helper function to get model configuration ==========
-def get_model():
-    llm = os.getenv('MODEL_CHOICE', 'gpt-4.1-mini')
-    base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
-    api_key = os.getenv('OPENAI_API_KEY', 'no-api-key-provided')
-
-    return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
 
 # ========== Set up MCP servers for each service ==========
 
@@ -116,9 +107,11 @@ repository_agent = Agent(
     system_prompt=(
         "You are a GitHub/GitLab specialist. Help users interact with its repositories and features. You are the only one able to create the issue(s) on the PR/MR following the code review."
     ),
-    mcp_servers=[repository_server],
+    mcp_servers=[] if repository_server is None else [repository_server],
     instrument=True
 )
+if repository_server is None:
+    raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'")
 
 # ========== Create the code reviewer agents ==========
 contextual_chunk_writer_agent = Agent(
