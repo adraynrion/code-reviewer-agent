@@ -93,16 +93,6 @@ crawl4ai_agent = Agent(
 )
 
 # ========== Create the code reviewer agents ==========
-contextual_chunk_writer_agent = Agent(
-    get_model(),
-    system_prompt=f"""
-        You are a contextual chunk writer agent. Help split the file diff by chunks of ~{chunk_size} tokens with additional context for the next agents processing.
-        The user will provide the whole document to split into chunks.
-        Please give a short succinct context to situate this chunk within the overall document for the purposes of improving understanding of the chunk.
-        Answer only with the chunks of the document with the additional context for each chunk and nothing else.
-    """,
-    instrument=True
-)
 reviewer_agent = Agent(
     get_model(),
     system_prompt=REVIEW_PROMPT,
@@ -236,8 +226,6 @@ async def main():
         print("Starting MCP servers...")
         # Manually run Agents
         await stack.enter_async_context(filesystem_instructions_retriever_agent.run_mcp_servers())
-        # Implement it ?
-        await stack.enter_async_context(contextual_chunk_writer_agent.run_mcp_servers())
         # Reviewer Agent and its sub-agents
         await stack.enter_async_context(reviewer_agent.run_mcp_servers())
         await stack.enter_async_context(crawl4ai_agent.run_mcp_servers())
