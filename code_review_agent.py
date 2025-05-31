@@ -1,11 +1,16 @@
 import argparse
 import asyncio
 import os
+import requests
 
 from dotenv import load_dotenv
 
 from agent_model import get_model
-from agent_prompts import MANAGER_PROMPT, USER_PROMPT, REVIEW_PROMPT
+from agent_prompts import (
+    FILESYSTEM_INSTRUCTIONS_RETRIEVER_USER_PROMPT,
+    MAIN_USER_PROMPT,
+    REVIEW_PROMPT,
+)
 from contextlib import AsyncExitStack
 
 from rich.markdown import Markdown
@@ -16,6 +21,7 @@ from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStdio
 
 from configure_langfuse import configure_langfuse
+from utils import get_file_languages
 
 load_dotenv()
 
@@ -64,26 +70,6 @@ crawl4ai_server = MCPServerStdio(
     tool_prefix='crawl4ai',
 )
 
-git_platform = os.getenv('PLATFORM', 'github')
-repository_server = None
-if git_platform == 'github':
-    # GitHub MCP server
-    repository_server = MCPServerStdio(
-        'npx', ['-y', '@modelcontextprotocol/server-github'],
-        env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv('GITHUB_TOKEN', '')},
-        tool_prefix='github',
-    )
-elif git_platform == 'gitlab':
-    # Gitlab MCP server
-    repository_server = MCPServerStdio(
-        'npx', ['-y', '@modelcontextprotocol/server-gitlab'],
-        env={
-            "GITLAB_PERSONAL_ACCESS_TOKEN": os.getenv('GITLAB_TOKEN', ''),
-            "GITLAB_API_URL": os.getenv('GITLAB_API_URL', 'https://gitlab.com/api/v4'),
-        },
-        tool_prefix='gitlab',
-    )
-
 # ========== Create subagents with their MCP servers ==========
 
 # Custom instructions retriever agent
@@ -106,18 +92,6 @@ crawl4ai_agent = Agent(
     instrument=True
 )
 
-# Repository agent
-repository_agent = Agent(
-    get_model(),
-    system_prompt=(
-        "You are a GitHub/GitLab specialist. Help users interact with its repositories and features. You are the only one able to create the issue(s) on the PR/MR following the code review."
-    ),
-    mcp_servers=[] if repository_server is None else [repository_server],
-    instrument=True
-)
-if repository_server is None:
-    raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'")
-
 # ========== Create the code reviewer agents ==========
 contextual_chunk_writer_agent = Agent(
     get_model(),
@@ -135,33 +109,8 @@ reviewer_agent = Agent(
     instrument=True
 )
 
-# ========== Create the primary orchestration agent ==========
-primary_agent = Agent(
-    get_model(),
-    system_prompt=MANAGER_PROMPT,
-    instrument=True
-)
-
-# ========== Define tools for the primary agent to call subagents ==========
-
-@primary_agent.tool_plain
-async def use_filesystem_instructions_retriever_agent(query: str) -> dict[str, str]:
-    """
-    Interact with the filesystem instructions retriever agent.
-    Use this tool to list and retrieve all the files content in the instructions folder.
-
-    Args:
-        ctx: The run context.
-        query: The instruction for the filesystem instructions retriever agent.
-
-    Returns:
-        The response from the filesystem instructions retriever agent.
-    """
-    print(f"Calling filesystem instructions retriever agent with query: {query}")
-    result = await filesystem_instructions_retriever_agent.run(query)
-    return {"result": result.output}
-
-@primary_agent.tool_plain
+# ========== Define tools for the reviewer agent to call subagents ==========
+@reviewer_agent.tool_plain
 async def use_crawl4ai_agent(query: str) -> dict[str, str]:
     """
     Interact with the crawl4ai agent.
@@ -178,64 +127,13 @@ async def use_crawl4ai_agent(query: str) -> dict[str, str]:
     result = await crawl4ai_agent.run(query)
     return {"result": result.output}
 
-@primary_agent.tool_plain
-async def use_git_repository_agent(query: str) -> dict[str, str]:
-    """
-    Interact with GitHub or GitLab through the Git repository subagent.
-    Use this tool when the user needs to access repositories, issues, PRs, or other Git resources.
-    Additionnally, this tool can be used to create issues on the PR/MR following the code review.
-
-    Args:
-        ctx: The run context.
-        query: The instruction for the Git repository agent.
-
-    Returns:
-        The response from the Git repository agent.
-    """
-    print(f"Calling Git repository agent with query: {query}")
-    result = await repository_agent.run(query)
-    return {"result": result.output}
-
-@primary_agent.tool_plain
-async def use_contextual_chunk_writer_agent(query: str) -> dict[str, str]:
-    f"""
-    Use this tool to split the file diff by chunks of ~{chunk_size} tokens with additional context for the next agents processing.
-
-    Args:
-        ctx: The run context.
-        query: The whole file content to split into chunks.
-
-    Returns:
-        The chunks of the file content with additional context for each chunk.
-    """
-    print(f"Calling Contextual Chunk Writer agent with query: {query}")
-    result = await contextual_chunk_writer_agent.run(query)
-    return {"result": result.output}
-
-@primary_agent.tool_plain
-async def use_reviewer_agent(query: str) -> dict[str, str]:
-    """
-    Use this tool to review any code diff using the reviewer subagent.
-    Compile the file name, the code diff, the custom user instructions and the code language documentation to review the code diff.
-
-    Args:
-        ctx: The run context.
-        query: The instruction for the reviewer agent.
-
-    Returns:
-        The response from the reviewer agent.
-    """
-    print(f"Calling Reviewer agent with query: {query}")
-    result = await reviewer_agent.run(query)
-    return {"result": result.output}
-
 # ========== Main execution function ==========
 
 async def main():
     """Main entry point for the code review agent."""
     args = parse_arguments()
 
-    platform = args.platform or git_platform
+    platform = args.platform
     repository = args.repository or os.getenv('REPOSITORY', '')
     pr_id = args.pr_id
 
@@ -248,15 +146,15 @@ async def main():
 
     # ========== Validate inputs ==========
 
-    if platform not in ('github', 'gitlab'):
+    if platform not in ("github", "gitlab"):
         print("Invalid platform. Must be either 'github' or 'gitlab'")
         return 1
 
-    if platform == 'github' and not os.getenv('GITHUB_TOKEN', ''):
+    if platform == "github" and not os.getenv("GITHUB_TOKEN", ""):
         print("GITHUB_TOKEN environment variable is required when platform is 'github'")
         return 1
 
-    if platform == 'gitlab' and not os.getenv('GITLAB_TOKEN', ''):
+    if platform == "gitlab" and not os.getenv("GITLAB_TOKEN", ""):
         print("GITLAB_TOKEN environment variable is required when platform is 'gitlab'")
         return 1
 
@@ -264,38 +162,180 @@ async def main():
         print("Repository not specified. Use --repository or set REPOSITORY environment variable")
         return 1
 
+    # ========== Fetch pull request files ==========
+
+    repository_deps = {}
+    if platform == "github":
+        GITHUB_PERSONAL_ACCESS_TOKEN = os.getenv('GITHUB_TOKEN', '')
+        url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}/files"
+        headers = {"Authorization": f"token {GITHUB_PERSONAL_ACCESS_TOKEN}"}
+        repository_deps = {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_PERSONAL_ACCESS_TOKEN
+        }
+    elif platform == "gitlab":
+        GITLAB_PERSONAL_ACCESS_TOKEN = os.getenv('GITLAB_TOKEN', '')
+        GITLAB_API_URL = os.getenv('GITLAB_API_URL', 'https://gitlab.com/api/v4')
+        url = f"{GITLAB_API_URL}/projects/{repository}/merge_requests/{pr_id}/changes"
+        headers = {"Private-Token": f"{GITLAB_PERSONAL_ACCESS_TOKEN}"}
+        repository_deps = {
+            "GITLAB_PERSONAL_ACCESS_TOKEN": GITLAB_PERSONAL_ACCESS_TOKEN,
+            "GITLAB_API_URL": GITLAB_API_URL
+        }
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        print(f"Failed to fetch pull request files: {response.status_code} {response.text}")
+        return 1
+
+    pull_request_files = response.json()
+    files = []
+    if platform == "github":
+        files = pull_request_files
+    elif platform == "gitlab":
+        files = pull_request_files.get("changes", [])
+
+    # Generate user messages for each file diff
+    userMessages = []
+
+    for file in files:
+        # Retrieve file name
+        filename = ""
+        if platform == "github":
+            filename = file["filename"]
+        elif platform == "gitlab":
+            filename = file["new_path"]
+
+        print(f"Processing file: {filename}")
+        diff = f"### File : {filename}\n"
+        diff += f"### Languages: {', '.join(get_file_languages(filename))}\n"
+        diff += "\n"
+
+        # Retrieve patch/diff string
+        patch = ""
+        if platform == "github":
+            patch = file.get("patch", "_No diff available (probably a binary file)._")
+        elif platform == "gitlab":
+            patch = file.get("diff", "_No diff available (probably a binary file)._")
+
+        # IMPORTANT: Replace all triple backticks with single backticks or escape them
+        safePatch = patch.replace('```', "''")
+        diff += "```diff\n"
+        diff += safePatch
+        diff += "\n```\n"
+
+        diff += "\n---\n\n"
+
+        # Construct User prompt message with current diff
+        userMessages.append(str(MAIN_USER_PROMPT.format(diff=diff)))
+
     # ========== Start MCP servers ==========
 
     # Use AsyncExitStack to manage all MCP servers in one context
     async with AsyncExitStack() as stack:
         # Start all the subagent MCP servers
         print("Starting MCP servers...")
+        # Manually run Agents
         await stack.enter_async_context(filesystem_instructions_retriever_agent.run_mcp_servers())
-        await stack.enter_async_context(crawl4ai_agent.run_mcp_servers())
-        await stack.enter_async_context(repository_agent.run_mcp_servers())
+        # Implement it ?
         await stack.enter_async_context(contextual_chunk_writer_agent.run_mcp_servers())
+        # Reviewer Agent and its sub-agents
         await stack.enter_async_context(reviewer_agent.run_mcp_servers())
+        await stack.enter_async_context(crawl4ai_agent.run_mcp_servers())
         print("All MCP servers started successfully!")
 
         console = Console()
-        user_input = USER_PROMPT.format(pr_id=pr_id, repository=repository)
-
         try:
-            # Configure the metadata for the Langfuse tracing
-            with tracer.start_as_current_span("Code-Review-Agent-Trace") as span:
-                span.set_attribute("langfuse.user.id", f"user-{pr_id}")
-                span.set_attribute("langfuse.session.id", "1111" if platform == 'github' else "2222")
+            user_custom_instructions = ""
+            curr_message = ""
+            reviewed_label = "ReviewedByAI"
 
-                print("\n[Assistant]")
-                curr_message = ""
-                with Live('', console=console, vertical_overflow='visible') as live:
-                    async with primary_agent.run_stream(user_input) as result:
-                        async for message in result.stream_text(delta=True):
-                            curr_message += message
-                            live.update(Markdown(curr_message))
+            with Live("", console=console, vertical_overflow="visible") as live:
+                # Retrieve filesystem instructions
+                with tracer.start_as_current_span("Filesystem-Instructions-Retrieval-Trace") as span:
+                    span.set_attribute("langfuse.user.id", f"pr-{pr_id}")
+                    span.set_attribute("langfuse.session.id", repository)
 
-                span.set_attribute("input.value", user_input)
-                span.set_attribute("output.value", curr_message)
+                    curr_message += "**Retrieving filesystem instructions...**\n"
+                    live.update(Markdown(curr_message))
+                    filesystem_instructions = await filesystem_instructions_retriever_agent.run(FILESYSTEM_INSTRUCTIONS_RETRIEVER_USER_PROMPT)
+                    user_custom_instructions = filesystem_instructions.output
+                    curr_message += f"**Retrieved filesystem instructions:**\n{user_custom_instructions}\n\n"
+                    live.update(Markdown(curr_message))
+
+                    span.set_attribute("input.value", FILESYSTEM_INSTRUCTIONS_RETRIEVER_USER_PROMPT)
+                    span.set_attribute("output.value", user_custom_instructions)
+
+                # Reviewer Agent loop on each file diff
+                for userMessage in userMessages:
+                    with tracer.start_as_current_span("Code-Review-Agent-Trace") as span:
+                        span.set_attribute("langfuse.user.id", f"pr-{pr_id}")
+                        span.set_attribute("langfuse.session.id", repository)
+
+                        user_input = MAIN_USER_PROMPT.format(custom_instructions=user_custom_instructions, diff=userMessage)
+                        reviewer_output = ""
+                        curr_message += "**Reviewing new code diff...**\n"
+                        live.update(Markdown(curr_message))
+                        async with reviewer_agent.run_stream(user_input) as result:
+                            async for message in result.stream_text(delta=True):
+                                reviewer_output += message
+                                curr_message += message
+                                live.update(Markdown(curr_message))
+
+                        curr_message += "\n\n---\n\n"
+                        curr_message += "**Posting code review to PR/MR...**\n"
+                        live.update(Markdown(curr_message))
+                        if platform == "github":
+                            headers = {
+                                "Authorization": f"Bearer {repository_deps['GITHUB_PERSONAL_ACCESS_TOKEN']}",
+                                "Accept": "application/vnd.github.v3+json"
+                            }
+                            data = {
+                                "body": reviewer_output
+                            }
+                            response = requests.post(
+                                f"https://api.github.com/repos/{repository}/issues/{pr_id}/comments",
+                                headers=headers,
+                                json=data
+                            )
+                            if response.status_code != 201:
+                                print(f"\n[Error] Failed to post comment: {response.text}\n")
+
+                            response = requests.post(
+                                f"https://api.github.com/repos/{repository}/issues/{pr_id}/labels",
+                                headers=headers,
+                                json=[{"name": reviewed_label}]
+                            )
+                            if response.status_code != 200:
+                                print(f"\n[Error] Failed to add label: {response.text}\n")
+                        elif platform == "gitlab":
+                            headers = {
+                                "Private-Token": repository_deps['GITLAB_PERSONAL_ACCESS_TOKEN'],
+                                "Content-Type": "application/json"
+                            }
+                            data = {
+                                "body": reviewer_output
+                            }
+                            response = requests.post(
+                                f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}/notes",
+                                headers=headers,
+                                json=data
+                            )
+                            if response.status_code != 201:
+                                print(f"\n[Error] Failed to post comment: {response.text}\n")
+
+                            response = requests.post(
+                                f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}/labels",
+                                headers=headers,
+                                json=[{"name": reviewed_label}]
+                            )
+                            if response.status_code != 200:
+                                print(f"\n[Error] Failed to add label: {response.text}\n")
+
+                        curr_message += f"**Code review posted to PR/MR #{pr_id} and label {reviewed_label} added!**\n\n"
+                        live.update(Markdown(curr_message))
+
+                        span.set_attribute("input.value", user_input)
+                        span.set_attribute("output.value", curr_message)
 
         except Exception as e:
             print(f"\n[Error] An error occurred: {str(e)}")
