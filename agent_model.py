@@ -13,7 +13,7 @@ def get_model():
     base_url = os.getenv('BASE_URL', 'https://api.openai.com/v1')
     api_key = os.getenv('LLM_API_KEY', 'no-api-key-provided')
 
-    if provider == 'OpenAI':
+    if provider == 'OpenAI' or provider == 'TogetherAI':
         return OpenAIModel(llm, provider=OpenAIProvider(base_url=base_url, api_key=api_key))
     elif provider == 'OpenRouter':
         return OpenAIModel(llm, provider=OpenRouterProvider(api_key=api_key))
