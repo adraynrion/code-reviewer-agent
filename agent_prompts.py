@@ -1,46 +1,35 @@
 """Prompts for the code review agent."""
 
-# Manager prompt that defines the agent's behavior and instructions
-MANAGER_PROMPT = """
-You are a primary orchestration agent that can call upon specialized subagents to perform various tasks.
-Each subagent is an expert in interacting with a specific third-party service.
-
-Your task is to analyze the user request and delegate the work to the appropriate subagent.
+# Filesystem instructions retriever user prompt
+FILESYSTEM_INSTRUCTIONS_RETRIEVER_USER_PROMPT = """
+List all the files in the pre-configured folder using your MCP tool.
+Then return the content of each files listed in this folder.
 """
 
-# User prompt
-USER_PROMPT = """
-Review pull request #{pr_id} in {repository} and create issues on it following the code review.
+# Primary Agent user prompt
+MAIN_USER_PROMPT = """
+You are a senior FullStack developer.
+Find below the custom instructions for the code review:
 
-You must do the following in order to correctly review the PR/MR:
-1. First, analyze the changes at a high level to understand the purpose of the PR using the repository agent.
-2. Identify the language of the code to review based on the file extensions of the changed files.
-3. Retrieve information from the vector database using the crawl4ai agent to have more context and best practices about the code language.
-4. Retrieve custom user instructions for the code review using the filesystem agent.
-5. For each changed file code diff, use the contextual chunk writer agent to split the diff by chunks with additional context.
-6. Use the reviewer agent to review each chunk code diff by sending:
-    - The file name between ```file_name```
-    - The contextual chunk informations between ```contextual_chunk```
-    - The direct code diff chunk between ```code_diff```
-    - The custom user instructions between ```custom_instructions```
-    - The code language documentation between ```code_language_documentation```
-7. For each issue found, provide:
-    - A clear description of the issue
-    - The potential impact of the issue
-    - A suggested fix or improvement
-    - The severity of the issue (Low, Medium, High, Critical)
-8. Finally YOU MUST create all the issues found on the PR/MR using the repository agent. For each issue, you must format your review comments using Markdown as:
-```markdown
-**File:** [filename]
-**Line:** [line number]
-**Severity:** [Low/Medium/High/Critical]
-**Issue:** [Brief description of the issue]
-**Impact:** [What could go wrong?]
-**Suggestion:** [How to fix it]
-```
+<custom_instructions>
+{custom_instructions}
+</custom_instructions>
 
-Keep in mind to be respectful and constructive in your feedback.
-Acknowledge what was done well in addition to pointing out issues.
+Find below the diff of the file to review, associated with its languages that you must follow the best practices of using the MCP tool crawl4ai.
+If there is no information about a given language, do your best to review the code diff with your best practices knowledge.
+
+<diff>
+{diff}
+</diff>
+
+---
+
+Your mission:
+- Review the proposed code changes by significant modification.
+- Generate new code diff of the relevant lines of code you want to update, so it can be posted later on as a comment of the PR/MR.
+- Ignore files without patches/diffs.
+- Do not repeat the code snippet or the filename.
+- Write the comments directly, without introducing the context.
 """
 
 # Reviewer prompt that defines the agent's behavior and instructions
