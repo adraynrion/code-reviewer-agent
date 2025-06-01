@@ -22,35 +22,38 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 ## Installation
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/adraynrion/code-reviewer-agent.git
-   cd code-reviewer-agent
-   ```
+```bash
+git clone https://github.com/adraynrion/code-reviewer-agent.git
+cd code-reviewer-agent
+```
 
 2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
 3. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# Install the requirements
+pip install -r requirements.txt
+# Install the crawl4ai dependencies
+crawl4ai-setup
+```
 
 4. (Optional) Install MCP servers globally:
-   ```bash
-   npm install -g @modelcontextprotocol/server-brave-search \
-                 @modelcontextprotocol/server-filesystem \
-                 @modelcontextprotocol/server-github \
-                 @modelcontextprotocol/server-gitlab
-   ```
+```bash
+npm install -g @modelcontextprotocol/server-brave-search \
+                @modelcontextprotocol/server-filesystem \
+                @modelcontextprotocol/server-github \
+                @modelcontextprotocol/server-gitlab
+```
 
 5. Copy the example environment file and update with your details:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your tokens and configuration
-   ```
+```bash
+cp .env.example .env
+# Edit .env with your tokens and configuration
+```
 
 ## Architecture
 
@@ -66,7 +69,7 @@ The agent is built with a modular architecture using the Model Context Protocol 
 
 Update the `.env` file with your configuration:
 
-```
+```sh
 # Required: Platform (github or gitlab)
 PLATFORM=github
 
@@ -74,6 +77,8 @@ PLATFORM=github
 REPOSITORY=owner/repo
 
 # GitHub Configuration
+# Note: Must be a personal access token, not a developer token
+# The token will be used to assign the PR author as a reviewer
 GITHUB_TOKEN=your_github_token_here
 
 # GitLab Configuration (if using GitLab)
@@ -84,6 +89,7 @@ GITHUB_TOKEN=your_github_token_here
 LLM_API_KEY=your_llm_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here # For Crawler AI Agent only
 MODEL_CHOICE=gpt-4.1-mini  # or your preferred model
+EMBEDDING_MODEL_CHOICE=text-embedding-ada-002  # or your preferred embedding model
 BASE_URL=https://api.openai.com/v1  # For OpenAI-compatible APIs
 
 # Crawler Configuration (for documentation processing)

@@ -4,17 +4,17 @@ import os
 import requests
 import time
 import json
+from openai import OpenAI
 
 from dotenv import load_dotenv
 
-from agent_model import get_model
+from agent_model import get_model, get_supabase, get_embedding_model_str
 from agent_prompts import (
     MAIN_USER_PROMPT,
     REVIEW_PROMPT,
 )
 
 from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPServerStdio
 
 from configure_langfuse import configure_langfuse
 from utils import get_file_languages
@@ -24,6 +24,11 @@ load_dotenv()
 # Configure Langfuse for agent observability
 tracer = configure_langfuse()
 local_instructions_dir = os.getenv('LOCAL_FILE_DIR', '')
+supabase_client = get_supabase()
+
+openai_client = OpenAI()
+
+# ========== Utils functions ==========
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -38,66 +43,35 @@ def parse_arguments() -> argparse.Namespace:
                        help='Path to custom review instructions folder (default: instructions)')
     return parser.parse_args()
 
-# ========== Set up MCP servers for each service ==========
+def search_documents(query: str, match_threshold: float = 0.8) -> list[dict]:
+    """Search for documents similar to the query using embeddings.
 
-# Crawl4ai MCP server
-crawl4ai_server = MCPServerStdio(
-    'docker',
-    [
-        'run', '--rm', '-i',
-        '-e', 'TRANSPORT',
-        '-e', 'OPENAI_API_KEY',
-        '-e', 'SUPABASE_URL',
-        '-e', 'SUPABASE_SERVICE_KEY',
-        'mcp/crawl4ai-rag'
-    ],
-    {
-        'TRANSPORT': 'stdio',
-        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
-        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
-        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', '')
-    },
-    tool_prefix='crawl4ai',
-)
+    Args:
+        query: The search query string
+        match_threshold: Similarity threshold for document matching (0-1)
 
-# ========== Create subagents with their MCP servers ==========
-
-# Crawl4ai agent
-crawl4ai_agent = Agent(
-    get_model(),
-    system_prompt="""
-    You are a vector database documentation retriever agent. Help retrieve the related documentation based on the languages of the code to review from the vector database.
-    """,
-    mcp_servers=[crawl4ai_server],
-    instrument=True
-)
+    Returns:
+        List of matching documents with their metadata
+    """
+    embeddings_response = openai_client.embeddings.create(
+        input=query,
+        model=get_embedding_model_str()
+    )
+    embedding = embeddings_response.data[0].embedding
+    response = supabase_client.rpc("match_documents", {
+        "query_embedding": embedding,
+        "match_threshold": match_threshold
+    }).execute()
+    return response.data
 
 # ========== Create the code reviewer agents ==========
 
 reviewer_agent = Agent(
     get_model(),
     system_prompt=REVIEW_PROMPT,
+    tools=[search_documents],
     instrument=True
 )
-
-# ========== Define tools for the reviewer agent to call subagents ==========
-
-# @reviewer_agent.tool_plain
-async def use_crawl4ai_agent(query: str) -> dict[str, str]:
-    """
-    Interact with the crawl4ai agent.
-    Use this tool to retrieve the related documentation based on the languages of the code to review from the vector database.
-
-    Args:
-        ctx: The run context.
-        query: The instruction for the crawl4ai agent.
-
-    Returns:
-        The response from the crawl4ai agent.
-    """
-    print(f"Calling crawl4ai agent with query: {query}")
-    result = await crawl4ai_agent.run(query)
-    return {"result": result.output}
 
 # ========== Main execution function ==========
 
@@ -363,7 +337,7 @@ async def main():
                         if response.status_code != 201:
                             print(f"\033[91m[Error] Failed to post a new comment on the PR #{pr_id}: {response.text}\n\033[0m")
                         else:
-                            print(f"\033[92mComment posted on the PR #{pr_id}!\033[0m")
+                            print(f"\033[92mComment(s) posted on the PR #{pr_id}!\033[0m")
 
                     elif platform == "gitlab":
                         # Post the code review to the MR, as a comment, on the corresponding commit, on the corresponding line of code
@@ -395,7 +369,7 @@ async def main():
                             if response.status_code != 201:
                                 print(f"\033[91m[Error] Failed to post a new comment on the MR #{pr_id}: {response.text}\n\033[0m")
                             else:
-                                print(f"\033[92mComment posted on the MR #{pr_id}!\033[0m")
+                                print(f"\033[92mComment(s) posted on the MR #{pr_id}!\033[0m")
 
         # Add the "reviewed_label" label to the PR/MR
         # Additionally, set the Reviewer as the user linked to the GITHUB_PERSONAL_ACCESS_TOKEN env variable

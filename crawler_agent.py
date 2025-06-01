@@ -1,107 +1,170 @@
 import argparse
 import asyncio
-import os
+import nest_asyncio
+import json
 
 from dotenv import load_dotenv
 
-from rich.markdown import Markdown
-from rich.console import Console
-from rich.live import Live
+from pydantic import BaseModel, Field
+from openai import OpenAI
 
-from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPServerStdio
+from crawl4ai import (
+    AsyncWebCrawler,
+    BrowserConfig,
+    CrawlerRunConfig
+)
+from crawl4ai.extraction_strategy import LLMExtractionStrategy
+from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
+from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 
-from configure_langfuse import configure_langfuse
-from agent_model import get_model
+from supabase import Client
+
+from agent_model import get_supabase, get_embedding_model_str, get_model
 
 load_dotenv()
+nest_asyncio.apply()
+openai_client = OpenAI()
 
-# Configure Langfuse for agent observability
-tracer = configure_langfuse()
+# ========== Classes ==========
+
+class CrawledDocument(BaseModel):
+    title: str = Field(..., description="Page title")
+    url: str = Field(..., description="Page URL")
+    content: str = Field(..., description="Main content")
+    metadata: dict = Field(default_factory=dict, description="Additional metadata")
+
+# ========== Utils functions ==========
 
 def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Crawler Agent')
-    parser.add_argument('--doc-url', type=str, required=True,
-                       help='URL of the documentation to crawl')
-    parser.add_argument('--mode', type=str, choices=['full', 'single-page'], default='single-page',
-                       help='Force the crawling of the only page sent (single-page - default) or will follow all the links of the page (full)')
+    parser = argparse.ArgumentParser(description="Crawl a website and store results in Supabase vector DB.")
+    parser.add_argument("--doc-url", type=str, required=True,
+                       help="URL of the documentation to crawl")
+    parser.add_argument("--max-depth", type=int, default=3,
+                       help="Maximum depth of the crawl (Default: 3)")
+    parser.add_argument("--max-pages", type=int, default=None,
+                       help="Maximum number of pages to crawl (Default: infinite)")
     return parser.parse_args()
 
-# ========== Set up MCP servers for each service ==========
+async def store_doc(doc_data: dict, supabase: Client):
+    try:
+        # Ensure we have content to process
+        if not doc_data.get("content"):
+            print("\033[93mWarning: No content found in document\033[0m")
+            return
 
-# Crawl4ai MCP server
-crawl4ai_server = MCPServerStdio(
-    'docker',
-    [
-        'run', '--rm', '-i',
-        '-e', 'TRANSPORT',
-        '-e', 'OPENAI_API_KEY',
-        '-e', 'SUPABASE_URL',
-        '-e', 'SUPABASE_SERVICE_KEY',
-        'mcp/crawl4ai-rag'
-    ],
-    {
-        'TRANSPORT': 'stdio',
-        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY', ''),
-        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
-        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', '')
-    }
-)
+        # Generate embedding
+        embeddings_response = openai_client.embeddings.create(
+            input=doc_data["content"],
+            model=get_embedding_model_str()
+        )
 
-# ========== Create subagents with their MCP servers ==========
+        # Safely extract the embedding
+        if hasattr(embeddings_response, 'data') and len(embeddings_response.data) > 0:
+            embedding = embeddings_response.data[0].embedding
+        else:
+            print("\033[91mError: Unexpected embeddings response format: {embeddings_response}\033[0m")
+            return
 
-# Crawl4ai agent
-crawl4ai_agent = Agent(
-    get_model(),
-    system_prompt="You are a crawler agent. Help fill the vector database with the documentation website.",
-    mcp_servers=[crawl4ai_server],
-    instrument=True
-)
+        # Insert into Supabase
+        supabase.table("documents").insert({
+            "title": doc_data.get("title", ""),
+            "content": doc_data["content"],
+            "embedding": embedding,
+            "metadata": doc_data.get("metadata", {})
+        }).execute()
+    except Exception as e:
+        print(f"\033[91mError in store_doc: {str(e)}\033[0m")
+        raise
 
 # ========== Main execution function ==========
 
 async def main():
     """Main entry point for the crawler agent."""
+    # Init Supabase client
+    supabase_client = get_supabase()
+
+    # Parse arguments
     args = parse_arguments()
-
     doc_url = args.doc_url
-    mode = args.mode
+    max_depth = args.max_depth
+    max_pages = float("inf") if args.max_pages is None else args.max_pages
 
-    print((
-        f"Starting crawler agent for {doc_url}.",
-    ))
+    print(f"\033[94mStarting crawler agent for {doc_url}.\033[0m")
 
-    # ========== Start MCP servers ==========
+    # -------- Set up Crawl4AI strategy and config --------
 
-    async with crawl4ai_agent.run_mcp_servers():
-        console = Console()
-        user_input = f"Fill the vector database with the documentation website at {doc_url}."
-        if mode == 'single-page':
-            user_input += f" You must only crawl the website page sent by the user and NO OTHER pages."
-        else:
-            user_input += " You must crawl all the pages linked from the website page sent by the user."
+    # Set up LLM strategy
+    llm_strategy = LLMExtractionStrategy(
+        llm_config=get_model(as_llm_config=True),
+        schema=CrawledDocument.model_json_schema(),
+        extraction_type="schema",      # "schema" for structured, "block" for freeform
+        instruction="Extract all best practices and/or the documentation on the latest version of the tool or programming language.",
+        chunk_token_threshold=1000,    # Chunking for large pages (optional)
+        overlap_rate=0.1,              # Overlap between chunks (optional)
+        apply_chunking=True,           # Enable chunking (recommended for long pages)
+        input_format="markdown",       # "markdown" (default), "html", or "fit_markdown"
+        extra_args={"temperature": 0.1, "max_tokens": 800},  # LLM params
+        verbose=True
+    )
 
-        try:
-            # Configure the metadata for the Langfuse tracing
-            with tracer.start_as_current_span("Crawler-Agent-Trace") as span:
-                span.set_attribute("langfuse.user.id", "user-crawler")
-                span.set_attribute("langfuse.session.id", "0001")
+    # Create a scorer
+    scorer = KeywordRelevanceScorer(
+        keywords=[
+            "crawl",
+            "example",
+            "best practices",
+            "configuration",
+            "documentation"
+        ],
+        weight=0.7
+    )
+    # Configure the strategy
+    crawl_strategy = BestFirstCrawlingStrategy(
+        max_depth=max_depth,
+        include_external=False,
+        url_scorer=scorer,
+        max_pages=max_pages,
+    )
 
-                print("\n[Assistant]")
-                curr_message = ""
-                with Live('', console=console, vertical_overflow='visible') as live:
-                    async with crawl4ai_agent.run_stream(user_input) as result:
-                        async for message in result.stream_text(delta=True):
-                            curr_message += message
-                            live.update(Markdown(curr_message))
+    # Set up crawler config
+    crawl_config = CrawlerRunConfig(
+        extraction_strategy=llm_strategy,     # determine how to processe the content of each page
+        deep_crawl_strategy=crawl_strategy,   # determines which pages to visit
+        locale="fr-FR",                       # Set browser locale (language and region formatting)
+        timezone_id="Europe/Paris",           # Set browser timezone
+        stream=True,                          # Enable streaming
+    )
 
-                span.set_attribute("input.value", user_input)
-                span.set_attribute("output.value", curr_message)
+    # (Optional) Browser config for headless operation
+    browser_cfg = BrowserConfig(headless=True)
 
-        except Exception as e:
-            print(f"\n[Error] An error occurred: {str(e)}")
-            return 1
+    # -------- Run crawler --------
+
+    async with AsyncWebCrawler(max_concurrent_tasks=3, config=browser_cfg) as crawler:
+        # Run the crawler and get the result
+        async for result in await crawler.arun(url=doc_url, config=crawl_config):
+            if result.success:
+                try:
+                    # The extracted content should be a JSON string containing a list of documents
+                    documents = json.loads(result.extracted_content)
+
+                    if not isinstance(documents, list):
+                        documents = [documents]  # Convert single document to a list for consistent processing
+
+                    # Store each document in the list
+                    for doc in documents:
+                        try:
+                            await store_doc(doc, supabase_client)
+                            print(f"\033[92mStored document from: {result.url} (depth {result.metadata.get('depth', 0)})\033[0m")
+                        except Exception as e:
+                            print(f"\033[93mError storing document from {result.url}: {str(e)}\033[0m")
+                except json.JSONDecodeError as e:
+                    print(f"\033[91mFailed to parse JSON from {result.url}: {str(e)}\033[0m")
+                    print(f"Content type: {type(result.extracted_content)}")
+                    print(f"Content: {result.extracted_content[:500]}...")
+            else:
+                print(f"\033[91mFailed: {result.url} ({result.error_message})\033[0m")
 
 if __name__ == "__main__":
     asyncio.run(main())
