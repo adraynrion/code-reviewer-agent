@@ -31,7 +31,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--platform', type=str, choices=['github', 'gitlab'],
                        help='Platform: github or gitlab (overrides PLATFORM env var)')
     parser.add_argument('--repository', type=str,
-                       help='Repository in format owner/repo (overrides REPOSITORY env var')
+                       help='Repository in format owner/repo for GitHub and project_id for GitLab (overrides REPOSITORY env var)')
     parser.add_argument('--pr-id', type=int, required=True,
                        help='Pull/Merge Request ID to review')
     parser.add_argument('--instructions-path', type=str, default='instructions',
@@ -114,7 +114,7 @@ async def main():
     reviewed_label = "ReviewedByAI"
 
     print((
-        f"Starting code review for {platform.upper()} PR #{pr_id} in {repository}.",
+        f"Starting code review for {platform.upper()} PR/MR #{pr_id} in {repository}.",
         f"Instructions path: {instructions_path}.",
     ))
 
@@ -147,6 +147,9 @@ async def main():
         pr_metadata_url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}/commits"
         pr_metadata_response = requests.get(pr_metadata_url, headers=headers)
         pr_metadata = pr_metadata_response.json()
+        if pr_metadata_response.status_code != 200:
+            print(f"\033[91mFailed to fetch pull request commits: {pr_metadata_response.status_code} {pr_metadata_response.text}\033[0m")
+            return 1
         # Construct the URL to fetch the diff
         url = f"https://api.github.com/repos/{repository}/pulls/{pr_id}/files"
         # Store the dependencies
@@ -161,8 +164,12 @@ async def main():
         headers = {"Private-Token": f"{GITLAB_PERSONAL_ACCESS_TOKEN}"}
         # Get MR Metadata with SHAs
         mr_metadata_url = f"{GITLAB_API_URL}/projects/{repository}/merge_requests/{pr_id}"
+        print(mr_metadata_url)
         mr_metadata_response = requests.get(mr_metadata_url, headers=headers)
         mr_metadata = mr_metadata_response.json()
+        if mr_metadata_response.status_code != 200:
+            print(f"\033[91m[ERROR] Failed to fetch merge request metadata: {mr_metadata_response.status_code} {mr_metadata_response.text}\033[0m")
+            return 1
         # Construct the URL to fetch the diff
         url = f"{GITLAB_API_URL}/projects/{repository}/merge_requests/{pr_id}/changes"
         # Store the dependencies
@@ -174,7 +181,7 @@ async def main():
 
     response = requests.get(url, headers=headers)
     if response.status_code != 200:
-        print(f"Failed to fetch pull request files: {response.status_code} {response.text}")
+        print(f"\033[91mFailed to fetch pull request files: {response.status_code} {response.text}\033[0m")
         return 1
 
     pull_request_files = response.json()
@@ -365,33 +372,35 @@ async def main():
                             "Private-Token": repository_deps['GITLAB_PERSONAL_ACCESS_TOKEN'],
                             "Content-Type": "application/json"
                         }
-                        data = {
-                            "body": reviewer_output_json.get("comments", "") + "\n\n" + reviewer_output_json.get("code_diff", ""),
-                            "position": {
-                                "position_type": "text",
-                                "base_sha": userMessage["sha"]["base_sha"],
-                                "start_sha": userMessage["sha"]["start_sha"],
-                                "head_sha": userMessage["sha"]["head_sha"],
-                                "new_path": userMessage["filename"],
-                                # "old_path": userMessage["filename"],
-                                "new_line": reviewer_output_json.get("line_number", 0),
-                                # "old_line": reviewer_output_json.get("line_number", 0),
-                            },
-                        }
-                        response = requests.post(
-                            f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}/discussions",
-                            headers=headers,
-                            json=data
-                        )
-                        if response.status_code != 201:
-                            print(f"\n\033[91m[Error] Failed to post a new comment on the MR #{pr_id}: {response.text}\n\033[0m")
-                        else:
-                            print(f"\n\033[92mComment posted on the MR #{pr_id}!\033[0m")
+                        for cr_comment in reviewer_output_json:
+                            body = cr_comment.get("comments", "") + "\n\n```diff\n" + cr_comment.get("code_diff", "") + "\n```\n\n"
+                            data = {
+                                "body": body,
+                                "position": {
+                                    "position_type": "text",
+                                    "base_sha": userMessage["sha_metadata"]["base_sha"],
+                                    "start_sha": userMessage["sha_metadata"]["start_sha"],
+                                    "head_sha": userMessage["sha_metadata"]["head_sha"],
+                                    "new_path": userMessage["filename"],
+                                    # "old_path": userMessage["filename"],
+                                    "new_line": cr_comment.get("line_number", 0),
+                                    # "old_line": reviewer_output_json.get("line_number", 0),
+                                },
+                            }
+                            response = requests.post(
+                                f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}/discussions",
+                                headers=headers,
+                                json=data
+                            )
+                            if response.status_code != 201:
+                                print(f"\033[91m[Error] Failed to post a new comment on the MR #{pr_id}: {response.text}\n\033[0m")
+                            else:
+                                print(f"\033[92mComment posted on the MR #{pr_id}!\033[0m")
 
         # Add the "reviewed_label" label to the PR/MR
         # Additionally, set the Reviewer as the user linked to the GITHUB_PERSONAL_ACCESS_TOKEN env variable
         if platform == "github":
-            # Set the label
+            # Set the label for the PR (GitHub)
             response = requests.post(
                 f"https://api.github.com/repos/{repository}/issues/{pr_id}/labels",
                 headers=headers,
@@ -412,7 +421,7 @@ async def main():
             else:
                 reviewer = user_resp.json()["login"]
                 print(f"\n\033[93mUsername '{reviewer}' retrieved! Assigning reviewer on the PR...\033[0m")
-                # Set the reviewer
+                # Assign reviewer to the pull request
                 response = requests.post(
                     f"https://api.github.com/repos/{repository}/pulls/{pr_id}/requested_reviewers",
                     headers=headers,
@@ -423,22 +432,42 @@ async def main():
                 else:
                     print(f"\033[95mReviewer {reviewer} set for PR #{pr_id}!\033[0m")
         elif platform == "gitlab":
-            response = requests.post(
-                f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}/labels",
+            # Set the label for the MR (GitLab)
+            response = requests.put(
+                f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}",
                 headers=headers,
-                json=[{"name": reviewed_label}]
+                json={"labels": reviewed_label}
             )
             if response.status_code != 200:
-                print(f"\n[Error] Failed to add label: {response.text}\n")
+                print(f"\033[91m[Error] Failed to add label: {response.text}\n\033[0m")
+            else:
+                print(f"\n\033[95mLabel '{reviewed_label}' added to MR #{pr_id}!\033[0m")
+
+            # Get the username (and ID) of the authenticated user with the GITLAB_PERSONAL_ACCESS_TOKEN
+            user_resp = requests.get(
+                f"{repository_deps['GITLAB_API_URL']}/user",
+                headers=headers
+            )
+            if user_resp.status_code != 200:
+                print(f"\n\033[91m[Error] Failed to get username: {user_resp.text}\n\033[0m")
+            else:
+                reviewer_id = user_resp.json()["id"]
+                reviewer_username = user_resp.json()["username"]
+                print(f"\n\033[93mUsername '{reviewer_username}' retrieved! Assigning reviewer on the MR...\033[0m")
+                # Assign reviewer to the merge request
+                response = requests.put(
+                    f"{repository_deps['GITLAB_API_URL']}/projects/{repository}/merge_requests/{pr_id}",
+                    headers=headers,
+                    json={"reviewer_ids": [reviewer_id]}
+                )
+                if response.status_code != 200:
+                    print(f"\033[91m[Error] Failed to assign MR: {response.text}\n\033[0m")
+                else:
+                    print(f"\033[95mReviewer {reviewer_username} set for MR #{pr_id}!\033[0m")
 
     except Exception as e:
-        print(f"\n[Error] An error occurred: {str(e)}")
+        print(f"\n\033[91m[Error] An error occurred: {str(e)}\n\033[0m")
         return 1
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n[Info] Code review process interrupted by user.")
-    except Exception as e:
-        print(f"\n[Error] An unexpected error occurred: {str(e)}")
+    asyncio.run(main())
