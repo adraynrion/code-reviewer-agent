@@ -1,0 +1,43 @@
+[flake8]
+# Maximum line length (matching Black's default)
+max-line-length = 88
+
+# Exclude common directories that shouldn't be checked
+exclude = .git,__pycache__,.venv,venv,env,.mypy_cache,.pytest_cache
+
+# Ignore specific error codes
+# E203: Whitespace before ':' (conflicts with Black)
+# W503: Line break before binary operator (conflicts with Black)
+# E501: Line too long (handled by max-line-length)
+# E402: Module level import not at top of file (sometimes needed for env setup)
+# F401: Module imported but unused (sometimes needed for __init__.py or type checking)
+ignore = E203, W503, E501, E402, F401
+
+# Maximum complexity (McCabe complexity)
+max-complexity = 10
+
+# Format for output
+format = default
+show-source = True
+statistics = True
+
+# Enable common flake8 plugins
+extend-select = 
+    B,   # flake8-bugbear
+    C4,  # flake8-comprehensions
+    D,   # flake8-docstrings
+    E,   # pycodestyle errors
+    F,   # pyflakes
+    I,   # isort (import order)
+    N,   # pep8-naming
+    W,   # pycodestyle warnings
+    ANN, # flake8-annotations
+    S,   # flake8-bandit (security)
+    SIM, # flake8-simplify
+    T20  # flake8-print
+
+# Docstring configuration
+docstring-convention = google
+
+# Import order style
+import-order-style = google

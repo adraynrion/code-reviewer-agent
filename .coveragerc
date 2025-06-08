@@ -1,0 +1,20 @@
+[run]
+source = code_reviewer_agent
+omit =
+    */tests/*
+    *__init__.py
+    */setup.py
+
+[report]
+# Show which statements are covered or missing in the final report
+show_missing = True
+
+# Don't complain if some code was never imported
+ignore_errors = True
+
+# Don't complain about files that are never imported
+skip_covered = True
+
+[html]
+# Directory where coverage HTML report will be generated
+directory = htmlcov
