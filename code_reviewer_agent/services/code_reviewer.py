@@ -27,6 +27,7 @@ from ..utils import (
     print_success,
     print_warning,
 )
+from ..utils.config import config
 from ..utils.file_utils import get_file_languages
 from ..utils.langfuse import configure_langfuse
 
@@ -76,7 +77,7 @@ async def search_documents(
         results = [dict(item) for item in response.data]
         print_success(f"Found {len(results)} matching document(s)")
 
-        if results and print_debug.enabled:  # Only show debug info if debug is enabled
+        if results and config.DEBUG:  # Only show debug info if debug is enabled
             print_debug("Top match:")
             print_debug(f"  Content: {results[0].get('content', '')[:200]}...")
             print_debug(f"  Similarity: {results[0].get('similarity', 0):.4f}")
@@ -194,8 +195,8 @@ def parse_arguments() -> argparse.Namespace:
         "--instructions-path",
         type=str,
         help=(
-            "Path to the local directory containing project documentation and "
-            "instructions (overrides LOCAL_FILE_DIR env var)"
+            "Path to the local directory containing your custom instructions "
+            "for the code review (overrides LOCAL_FILE_DIR env var)"
         ),
         metavar="PATH",
     )

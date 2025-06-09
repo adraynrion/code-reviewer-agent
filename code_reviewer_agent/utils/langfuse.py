@@ -3,6 +3,8 @@
 import os
 from typing import Any
 
+from langfuse import Langfuse, StatefulTraceClient
+
 
 # Mock tracer used when Langfuse is not configured
 class MockTracer:
@@ -16,7 +18,7 @@ class MockTracer:
         return self
 
 
-def configure_langfuse() -> Any:
+def configure_langfuse() -> StatefulTraceClient:
     """Configure and return a Langfuse tracer.
 
     Returns:
@@ -32,15 +34,13 @@ def configure_langfuse() -> Any:
         return MockTracer()
 
     try:
-        from langfuse import Langfuse
-
         langfuse = Langfuse(
             public_key=langfuse_public_key,
             secret_key=langfuse_secret_key,
             host=langfuse_host,
         )
 
-        return langfuse.trace
+        return langfuse.trace()
     except ImportError:
         # Return a mock tracer if Langfuse is not installed
         return MockTracer()

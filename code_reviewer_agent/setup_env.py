@@ -147,7 +147,7 @@ def setup_environment() -> None:
 
     # Local File Storage
     local_file_dir = get_input(
-        "Local instructions storage directory",
+        "Localization of your custom instructions directory",
         default=os.path.join(os.path.dirname(__file__), "instructions"),
         is_required=False,
     )
