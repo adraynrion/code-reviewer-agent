@@ -234,13 +234,13 @@ PROVIDER={provider}
 MODEL_CHOICE={model_choice}
 BASE_URL={base_url}
 LLM_API_KEY={llm_api_key}
-OPENAI_API_KEY={openai_api_key}
 
 # Supabase Configuration
 SUPABASE_URL={supabase_url}
 SUPABASE_SERVICE_KEY={supabase_service_key}
 
 # Embedding Model
+OPENAI_API_KEY={openai_api_key}
 EMBEDDING_MODEL={embedding_model}
 
 # Local File Storage

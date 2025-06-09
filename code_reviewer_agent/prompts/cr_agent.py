@@ -72,7 +72,7 @@ You are now ready to review the submitted code diff and return your JSON-formatt
 """
 
 # User prompt
-USER_PROMPT="""
+USER_PROMPT = """
 Please find below the code diff to review:
 
 {diff}

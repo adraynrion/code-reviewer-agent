@@ -15,10 +15,11 @@ __author__ = "Adraynrion"
 __email__ = "adraynrion@citizenofai.com"
 
 # Import main functionality to make it available at the package level
-from .services.code_reviewer import review_code
+from .services.code_reviewer import main as code_reviewer_main
 from .services.crawler import crawl_urls
 
 # Export the main functions
+review_code = code_reviewer_main  # Backward compatibility
 __all__ = [
     "review_code",
     "crawl_urls",

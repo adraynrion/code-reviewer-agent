@@ -9,6 +9,8 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_rich_traceback
 
+from ..utils.config import config
+
 # Define a custom theme for consistent styling
 custom_theme = Theme(
     {
@@ -94,13 +96,14 @@ def print_info(text: str) -> None:
 
 
 def print_debug(text: str) -> None:
-    """Print a debug message.
+    """Print a debug message. ONLY if DEBUG is enabled.
 
     Args:
         text: Debug message to display
 
     """
-    console.print(f"[dim]{text}[/]")
+    if config.DEBUG:
+        console.print(f"[dim]{text}[/]")
 
 
 def print_code_block(code: str, language: str = "text") -> None:
@@ -114,16 +117,13 @@ def print_code_block(code: str, language: str = "text") -> None:
     console.print(Syntax(code, language, theme="monokai"))
 
 
-def print_diff(diff_content: str, filename: str = "") -> None:
+def print_diff(diff_content: str) -> None:
     """Print a diff with proper formatting.
 
     Args:
         diff_content: The diff content to display
-        filename: Optional filename for context
 
     """
-    if filename:
-        console.print(f"[bold]File:[/] [code]{filename}[/]\n")
     console.print(Syntax(diff_content, "diff", theme="monokai", line_numbers=True))
 
 
@@ -196,8 +196,13 @@ def confirm(prompt: str, default: bool = True) -> bool:
 
 
 def print_exception() -> None:
-    """Print the current exception with rich formatting."""
-    console.print_exception(show_locals=True)
+    """Print the current exception with rich formatting.
+
+    ONLY if DEBUG is enabled.
+
+    """
+    if config.DEBUG:
+        console.print_exception(show_locals=True)
 
 
 def print_json(data: Any) -> None:

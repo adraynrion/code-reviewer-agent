@@ -3,7 +3,7 @@
 import os
 from typing import Any
 
-from langfuse import Langfuse, StatefulTraceClient
+from langfuse import Langfuse
 
 
 # Mock tracer used when Langfuse is not configured
@@ -18,7 +18,7 @@ class MockTracer:
         return self
 
 
-def configure_langfuse() -> StatefulTraceClient:
+def configure_langfuse() -> Any:
     """Configure and return a Langfuse tracer.
 
     Returns:

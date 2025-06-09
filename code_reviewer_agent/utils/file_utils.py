@@ -19,7 +19,7 @@ def _detect_language(filename: str) -> list[str]:
 
     # Handle files without extensions
     if not ext or ext == filename:
-        return ["no_extension"]
+        return []
 
     # Language detection based on file extension
     language_map = {
@@ -97,7 +97,7 @@ def _detect_language(filename: str) -> list[str]:
         "editorconfig": ["editorconfig"],
     }
 
-    return language_map.get(ext, ["unknown"])
+    return language_map.get(ext, [])
 
 
 def get_file_languages(file_paths: Union[str, List[str]]) -> Dict[str, Set[str]]:
@@ -107,7 +107,7 @@ def get_file_languages(file_paths: Union[str, List[str]]) -> Dict[str, Set[str]]
         file_paths: A single file path or a list of file paths to analyze
 
     Returns:
-        Dictionary mapping detected languages to sets of file paths
+        Dictionary mapping file paths to detected languages
 
     """
     # Convert single file path to list for consistent processing
@@ -126,7 +126,7 @@ def get_file_languages(file_paths: Union[str, List[str]]) -> Dict[str, Set[str]]
         # Add file to each detected language's set
         for lang in detected_languages:
             if lang not in languages:
-                languages[lang] = set()
-            languages[lang].add(file_path)
+                languages[file_path] = set()
+            languages[file_path].add(lang)
 
     return languages

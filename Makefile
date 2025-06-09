@@ -3,7 +3,7 @@
 ############################################
 # Code quality checks and formatting
 ############################################
-.PHONY: clean-imports sort-imports format format-docs add-type-annotations type-check all
+.PHONY: all clean-imports sort-imports format format-docs add-type-annotations type-check
 
 # Run all code quality checks and formatting
 all: clean-imports sort-imports format format-docs add-type-annotations type-check
@@ -116,7 +116,7 @@ clean: clean-all
 ############################################
 # Virtual environment
 ############################################
-.PHONY: venv
+.PHONY: venv clean-venv reset-venv
 
 # Create a virtual environment
 venv:
