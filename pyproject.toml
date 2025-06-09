@@ -22,7 +22,17 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # Will be populated from requirements.txt during build
+    "crawl4ai>=0.6.3,<1.0.0",
+    "logfire>=3.14.0,<4.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",
+    "openai>=1.82.1,<2.0.0",
+    "pydantic>=2.11.5,<3.0.0",
+    "pydantic-ai>=0.2.9,<1.0.0",
+    "pydantic-ai-slim>=0.2.9,<1.0.0",
+    "python-dotenv>=1.1.0,<2.0.0",
+    "rich>=14.0.0,<15.0.0",
+    "supabase>=2.15.2,<3.0.0",
+    "vecs>=0.4.5,<1.0.0"
 ]
 
 [project.optional-dependencies]
