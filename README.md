@@ -10,6 +10,38 @@
 
 An intelligent code review agent that analyzes pull requests on GitHub and GitLab, providing detailed feedback based on custom review instructions and language-specific best practices. Also includes a web crawler agent for documentation processing.
 
+## 🏗️ Project Structure
+
+```
+code-reviewer-agent/
+├── code_reviewer_agent/     # Main package
+│   ├── __init__.py          # Package initialization
+│   ├── __main__.py          # Main entry point
+│   ├── models/              # Data models and schemas
+│   │   └── agent.py         # Agent model definitions
+│   ├── prompts/             # Prompt templates
+│   │   └── agent.py         # Agent prompt templates
+│   ├── services/            # Core services
+│   │   ├── __init__.py
+│   │   ├── code_reviewer.py # Code review service
+│   │   └── crawler.py       # Web crawler service
+│   └── utils/               # Utility functions
+│       ├── __init__.py
+│       ├── config.py        # Configuration utilities
+│       ├── file_utils.py    # File handling utilities
+│       └── langfuse.py      # Langfuse integration
+├── scripts/                 # Utility scripts
+│   └── configure_langfuse.py
+├── tests/                   # Test suite
+├── .env.example             # Example environment variables
+├── .gitignore
+├── LICENSE
+├── Makefile
+├── pyproject.toml
+├── README.md
+└── requirements.txt
+```
+
 ## ✨ Features
 
 - 🤖 **AI-Powered** - Uses advanced language models to understand code changes
@@ -44,91 +76,50 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-3. Install in development mode with all dependencies:
+3. Install the package in development mode:
 ```bash
-# Install the dev requirements
-pip install -e '.[dev]'
-# Install the crawl4ai dependencies
-crawl4ai-setup
+# Install with all optional dependencies
+pip install -e '.[dev,crawler,langfuse]'
+
+# Or for minimal installation
+pip install -e .
+
+# Install additional dependencies as needed
+pip install -e '.[crawler]'  # For web crawling functionality
+pip install -e '.[langfuse]'  # For Langfuse observability
 ```
 
-4. Copy the example environment file and update with your details:
+4. Set up your environment:
 ```bash
+# Run the interactive setup script
+setup-code-reviewer
+
+# Or manually create a .env file
 cp .env.example .env
-# Edit .env with your tokens and configuration
+# Edit the .env file with your configuration
 ```
 
-## 🛠️ Configuration
+## 🚀 Usage
 
-Update the `.env` file with your configuration:
-
-```sh
-# Required: Platform (github or gitlab)
-PLATFORM=github
-
-# Required: Repository in format 'owner/repo' for GitHub or '<project_id>' for GitLab
-REPOSITORY=owner/repo
-
-# GitHub Configuration
-# Note: Must be a personal access token, not a developer token
-# The token will be used to assign the PR author as a reviewer
-GITHUB_TOKEN=your_github_token_here
-
-# GitLab Configuration (if using GitLab)
-# GITLAB_TOKEN=your_gitlab_token_here
-# GITLAB_API_URL=https://gitlab.com/api/v4  # For self-hosted GitLab
-
-# LLM Configuration
-LLM_API_KEY=your_llm_api_key_here
-MODEL_CHOICE=gpt-4.1-mini  # or your preferred model
-EMBEDDING_MODEL_CHOICE=text-embedding-ada-002  # or your preferred embedding model
-BASE_URL=https://api.openai.com/v1  # API URL of the LLM provider
-
-# Crawler Configuration (for documentation processing)
-OPENAI_API_KEY=your_openai_api_key_here # For Crawler AI Agent only
-SUPABASE_URL=your_supabase_url_here
-SUPABASE_SERVICE_KEY=your_supabase_service_key_here
-
-# Langfuse Configuration (optional)
-# LANGFUSE_PUBLIC_KEY=your_public_key_here
-# LANGFUSE_SECRET_KEY=your_secret_key_here
-# LANGFUSE_HOST=https://cloud.langfuse.com
-```
-
-## 📝 Usage
-
-### 🤖 Code Review Agent
-
-Run the code review agent with the required PR/MR ID:
+### Code Review Agent
 
 ```bash
-python code_review_agent.py --pr-id 123
+# Run the code review agent
+code-reviewer-agent --help
+
+# Example: Review a pull request
+code-reviewer-agent --repo-url https://github.com/owner/repo --pr 123
 ```
 
-#### Code Review Agent Command Line Arguments
-
-| Argument | Description | Required | Default |
-|----------|-------------|:--------:|:-------:|
-| `--pr-id` | Pull/Merge Request ID | ✅ | - |
-| `--repository` | Repository in format `owner/repo` | ❌ | Uses `REPOSITORY` env var |
-| `--platform` | Version control platform: `github` or `gitlab` | ❌ | Uses `PLATFORM` env var or `github` |
-| `--instructions-path` | Path to custom instructions folder | ❌ | `instructions` |
-
-### 📚 Crawler Agent
-
-The crawler agent processes documentation websites and stores the content in a vector database for later retrieval.
+### Crawler Agent
 
 ```bash
-python crawler_agent.py --doc-url https://example.com/docs
+# Run the crawler agent
+crawler-agent --help
+
+# Example: Crawl documentation
+crawler-agent --url https://docs.example.com --max-pages 10
 ```
-
-#### Crawler Agent Command Line Arguments
-
-| Argument | Description | Required | Default |
-|----------|-------------|:--------:|:-------:|
-| `--doc-url` | URL of the documentation to crawl | ✅ | - |
-| `--max-depth` | Maximum depth of the crawl | ❌ | `3` |
-| `--max-pages` | Maximum number of pages to crawl | ❌ | `None` |
 
 ## 🧪 Testing
 

@@ -1,3 +1,75 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-reviewer-agent"
+version = "1.0.0"
+description = "An intelligent code review agent for GitHub and GitLab pull requests"
+readme = "README.md"
+requires-python = ">=3.11.9,<3.12.0"
+authors = [
+    {name = "Adraynrion", email = "adraynrion@citizenofai.com"}
+]
+license = "MIT"
+keywords = ["code", "review", "agent", "github", "gitlab", "pull", "requests", "ai", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Will be populated from requirements.txt during build
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.0.0,<25.0.0",
+    "flake8>=7.0.0,<8.0.0",
+    "isort>=5.13.0,<6.0.0",
+    "mypy>=1.8.0,<2.0.0",
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-cov>=4.1.0,<5.0.0",
+    "pytest-asyncio>=0.23.0,<0.24.0",
+    "types-PyYAML>=6.0.0,<7.0.0",
+    "types-requests>=2.31.0,<3.0.0",
+    "types-setuptools>=69.5.0,<70.0.0",
+    "types-pyinstaller>=6.13.0,<7.0.0",
+    "opentelemetry-api>=1.0.0,<2.0.0",
+    "pylint>=3.0.0,<4.0.0",
+    "logfire[opentelemetry]>=3.14.0,<4.0.0",
+    "pydantic-ai[google]>=0.2.9,<0.3.0",
+    "types-python-slugify>=8.0.0,<9.0.0",
+    "flake8-annotations>=3.0.0,<4.0.0",
+    "flake8-bandit>=4.1.0,<5.0.0",
+    "flake8-bugbear>=24.0.0,<25.0.0",
+    "flake8-comprehensions>=3.16.0,<4.0.0",
+    "flake8-docstrings>=1.7.0,<2.0.0",
+    "flake8-import-order>=0.18.0,<0.19.0",
+    "flake8-print>=5.0.0,<6.0.0",
+    "flake8-simplify>=0.21.0,<0.22.0",
+    "pep8-naming>=0.14.0,<0.15.0",
+    "autotyping>=24.9.0",
+    "libcst>=1.1.0",
+    "docformatter>=1.7.0,<2.0.0",
+    "pycln>=2.4.0,<3.0.0"
+]
+crawler = [
+    "crawl4ai>=0.5.0,<1.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0",
+]
+langfuse = [
+    "langfuse>=2.0.0,<3.0.0",
+]
+
+[project.scripts]
+code-reviewer-agent = "code_reviewer_agent.__main__:main"
+crawler-agent = "code_reviewer_agent.services.crawler:main"
+setup-code-reviewer = "code_reviewer_agent.setup_env:setup_environment"
+
 [tool.black]
 line-length = 88
 target-version = ['py38']
@@ -69,7 +141,3 @@ exclude_lines = [
     "raise ValueError",
     "@abstractmethod",
 ]
-
-[build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"

@@ -1,4 +1,4 @@
-"""Prompts for the code review agent."""
+"""Prompt templates for the code review agent."""
 
 # Primary Agent user prompt
 MAIN_USER_PROMPT = """

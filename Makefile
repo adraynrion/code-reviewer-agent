@@ -34,12 +34,22 @@ add-type-annotations:
 	@echo "🔍 Adding type annotations..."
 	@# Process root directory Python files (non-recursive)
 	@echo "  • Processing root directory..."
-	@find . -maxdepth 1 -type f -name '*.py' -print0 | xargs -0 autotyping --safe >/dev/null 2>&1
+	@files=$$(find . -maxdepth 1 -type f -name '*.py')
+	@if [ -n "$$files" ]; then \
+		find . -maxdepth 1 -type f -name '*.py' -print0 | xargs -0 autotyping --safe >/dev/null 2>&1; \
+	else \
+		echo "  ⚠️  No *.py files found in root directory, skipping..."; \
+	fi;
 	@# Process Python files in specified directories (recursively)
 	@for dir in code_reviewer_agent hooks tests; do \
 		if [ -d "$$dir" ]; then \
 			echo "  • Processing directory: $$dir"; \
-			find "$$dir" -type f -name '*.py' -print0 | xargs -0 autotyping --safe >/dev/null 2>&1; \
+			files=$$(find "$$dir" -type f -name '*.py'); \
+			if [ -n "$$files" ]; then \
+				find "$$dir" -type f -name '*.py' -print0 | xargs -0 autotyping --safe >/dev/null 2>&1; \
+			else \
+				echo "  ⚠️  No *.py files found in '$$dir' directory, skipping..."; \
+			fi; \
 		else \
 			echo "  ⚠️  Directory '$$dir' not found, skipping..."; \
 		fi; \
@@ -123,8 +133,8 @@ clean-venv:
 # Reset virtual environment
 reset-venv: clean-venv venv
 	@echo "🔄 Resetting virtual environment..."
-	@pip install --upgrade pip
-	@pip install -e .
+	@.venv/bin/pip install --upgrade pip
+	@.venv/bin/pip install -e '.[dev,crawler,langfuse]'
 	@echo "✅ Virtual environment reset"
 
 ############################################
@@ -147,8 +157,10 @@ endif
 	@echo "🆙 Bumping version to $(VERSION)..."
 	@# Update version in __init__.py
 	@sed -i "s/^__version__ = .*/__version__ = \"$(VERSION)\"/" $(VERSION_FILE)
-	@# Stage the version change
-	@git add $(VERSION_FILE)
+	@# Update version in pyproject.toml
+	@sed -i 's/^version = \".*\"/version = \"$(VERSION)\"/' pyproject.toml
+	@# Stage the version changes
+	@git add $(VERSION_FILE) pyproject.toml
 	@# Create commit
 	@git commit -m "VERSION: Upgrade version to $(VERSION)"
 	@# Create annotated tag
