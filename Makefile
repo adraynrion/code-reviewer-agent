@@ -157,10 +157,8 @@ endif
 	@echo "🆙 Bumping version to $(VERSION)..."
 	@# Update version in __init__.py
 	@sed -i "s/^__version__ = .*/__version__ = \"$(VERSION)\"/" $(VERSION_FILE)
-	@# Update version in pyproject.toml
-	@sed -i 's/^version = \".*\"/version = \"$(VERSION)\"/' pyproject.toml
-	@# Stage the version changes
-	@git add $(VERSION_FILE) pyproject.toml
+	@# Stage the version change
+	@git add $(VERSION_FILE)
 	@# Create commit
 	@git commit -m "VERSION: Upgrade version to $(VERSION)"
 	@# Create annotated tag

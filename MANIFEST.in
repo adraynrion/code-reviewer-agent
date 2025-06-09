@@ -1,3 +1,7 @@
 include requirements.txt
 include README.md
 include LICENSE
+include pyproject.toml
+
+# Include package data
+include code_reviewer_agent/default_config.yaml
