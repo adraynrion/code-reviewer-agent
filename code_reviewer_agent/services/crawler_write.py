@@ -1,16 +1,19 @@
+"""Web crawler service for the code review agent."""
+
 from typing import Any, Dict, List, Optional
 
+import nest_asyncio
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 from crawl4ai.extraction_strategy import LLMExtractionStrategy
 from openai import OpenAI
+from pydantic import BaseModel, Field
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 from supabase import Client
 
 from code_reviewer_agent.config.config import config
-from code_reviewer_agent.models.agent import get_model, get_supabase
-from code_reviewer_agent.services.crawler import CrawledDocument
+from code_reviewer_agent.models.base_agent import get_model, get_supabase
 from code_reviewer_agent.utils.rich_utils import (
     print_error,
     print_exception,
@@ -20,149 +23,24 @@ from code_reviewer_agent.utils.rich_utils import (
     print_warning,
 )
 
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply()
+
+# Initialize OpenAI client
 openai_client = OpenAI()
+# Initialize Supabase client
 supabase_client = get_supabase()
 
 
-async def store_doc(
-    doc_data: dict,
-    supabase: Client,
-    progress: Optional[Progress] = None,
-    task_id: Optional[TaskID] = None,
-) -> bool:
-    """Store a document in the database.
+class CrawledDocument(BaseModel):
+    """Model for crawled document data."""
 
-    Args:
-        doc_data: Document data to store
-        supabase: Supabase client instance
-        progress: Optional Rich Progress instance for tracking
-        task_id: Optional task ID for progress tracking
-
-    Returns:
-        bool: True if storage was successful, False otherwise
-
-    """
-    try:
-        # Update progress if provided
-        if progress is not None and task_id is not None:
-            progress.update(
-                task_id, description=f"Processing: {doc_data.get('title', 'Untitled')}"
-            )
-
-        # Ensure we have content to process
-        if not doc_data.get("content"):
-            print_warning("No content found in document")
-            return False
-
-        # Generate embedding with progress feedback
-        if progress is not None and task_id is not None:
-            progress.update(task_id, description="Generating embeddings...")
-
-        try:
-            embeddings_response = openai_client.embeddings.create(
-                input=doc_data["content"], model=config.crawler.embedding_model
-            )
-
-            # Safely extract the embedding
-            if (
-                hasattr(embeddings_response, "data")
-                and len(embeddings_response.data) > 0
-            ):
-                embedding = embeddings_response.data[0].embedding
-            else:
-                print_error("Unexpected embeddings response format")
-                return False
-
-        except Exception as e:
-            print_error(f"Error generating embeddings: {str(e)}")
-            return False
-
-        # Store in Supabase
-        if progress is not None and task_id is not None:
-            progress.update(task_id, description="Storing in database...")
-
-        try:
-            supabase.table("documents").insert(
-                {
-                    "title": doc_data.get("title", "Untitled"),
-                    "content": doc_data["content"],
-                    "embedding": embedding,
-                    "metadata": doc_data.get(
-                        "metadata",
-                        {
-                            "source": doc_data.get("url", "unknown"),
-                            "content_length": len(doc_data["content"]),
-                        },
-                    ),
-                }
-            ).execute()
-
-            if progress is not None and task_id is not None:
-                progress.update(task_id, description="Document stored successfully")
-
-            return True
-
-        except Exception as e:
-            print_error(f"Database error: {str(e)}")
-            return False
-
-    except Exception as e:
-        print_error(f"Error in store_doc: {str(e)}")
-        print_exception()
-        return False
-    finally:
-        # Ensure progress is updated even if an error occurs
-        if progress is not None and task_id is not None:
-            progress.update(task_id, completed=True)
-
-
-async def search_documents(
-    query: str, match_threshold: float = 0.8
-) -> List[Dict[str, Any]]:
-    """Search for documents chunks similar to the query using embeddings.
-
-    Args:
-        query: The search query string
-        match_threshold: Similarity threshold for document matching (0-1)
-
-    Returns:
-        List of matching document chunks with their metadata
-
-    Raises:
-        ValueError: If the response from Supabase is not in the expected format
-
-    """
-    try:
-        print_info(f"Generating embeddings for query: {query}")
-        embeddings_response = openai_client.embeddings.create(
-            input=query, model=config.crawler.embedding_model
-        )
-        embedding = embeddings_response.data[0].embedding
-
-        print_info(f"Searching documents with threshold: {match_threshold}")
-        response = supabase_client.rpc(
-            "match_documents",
-            {"query_embedding": embedding, "match_threshold": match_threshold},
-        ).execute()
-
-        if not hasattr(response, "data"):
-            print_error("Unexpected response format from Supabase")
-            raise ValueError("Unexpected response format from Supabase")
-
-        results = [dict(item) for item in response.data]
-        print_success(f"Found {len(results)} matching document chunks(s)")
-
-        if results and config.logging.debug:
-            print_section("Top match:")
-            print_info(f"  Content: {results[0].get('content', '')[:200]}...")
-            print_info(f"  Similarity: {results[0].get('similarity', 0):.4f}")
-
-        return results
-
-    except Exception as e:
-        print_error(f"Error searching documents: {str(e)}")
-        print_warning("Search failed, proceeding with empty results")
-        return []
+    title: str = Field(..., description="Page title")
+    url: str = Field(..., description="Page URL")
+    content: str = Field(..., description="Page content")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional metadata"
+    )
 
 
 async def crawl_urls(
@@ -374,3 +252,95 @@ async def crawl_urls(
             print_warning("No content was extracted from the provided URLs")
 
         return results
+
+
+async def store_doc(
+    doc_data: dict,
+    supabase: Client,
+    progress: Optional[Progress] = None,
+    task_id: Optional[TaskID] = None,
+) -> bool:
+    """Store a document in the database.
+
+    Args:
+        doc_data: Document data to store
+        supabase: Supabase client instance
+        progress: Optional Rich Progress instance for tracking
+        task_id: Optional task ID for progress tracking
+
+    Returns:
+        bool: True if storage was successful, False otherwise
+
+    """
+    try:
+        # Update progress if provided
+        if progress is not None and task_id is not None:
+            progress.update(
+                task_id, description=f"Processing: {doc_data.get('title', 'Untitled')}"
+            )
+
+        # Ensure we have content to process
+        if not doc_data.get("content"):
+            print_warning("No content found in document")
+            return False
+
+        # Generate embedding with progress feedback
+        if progress is not None and task_id is not None:
+            progress.update(task_id, description="Generating embeddings...")
+
+        try:
+            embeddings_response = openai_client.embeddings.create(
+                input=doc_data["content"], model=config.crawler.embedding_model
+            )
+
+            # Safely extract the embedding
+            if (
+                hasattr(embeddings_response, "data")
+                and len(embeddings_response.data) > 0
+            ):
+                embedding = embeddings_response.data[0].embedding
+            else:
+                print_error("Unexpected embeddings response format")
+                return False
+
+        except Exception as e:
+            print_error(f"Error generating embeddings: {str(e)}")
+            return False
+
+        # Store in Supabase
+        if progress is not None and task_id is not None:
+            progress.update(task_id, description="Storing in database...")
+
+        try:
+            supabase.table("documents").insert(
+                {
+                    "title": doc_data.get("title", "Untitled"),
+                    "content": doc_data["content"],
+                    "embedding": embedding,
+                    "metadata": doc_data.get(
+                        "metadata",
+                        {
+                            "source": doc_data.get("url", "unknown"),
+                            "content_length": len(doc_data["content"]),
+                        },
+                    ),
+                }
+            ).execute()
+
+            if progress is not None and task_id is not None:
+                progress.update(task_id, description="Document stored successfully")
+
+            return True
+
+        except Exception as e:
+            print_error(f"Database error: {str(e)}")
+            return False
+
+    except Exception as e:
+        print_error(f"Error in store_doc: {str(e)}")
+        print_exception()
+        return False
+    finally:
+        # Ensure progress is updated even if an error occurs
+        if progress is not None and task_id is not None:
+            progress.update(task_id, completed=True)

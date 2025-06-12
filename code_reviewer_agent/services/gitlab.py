@@ -3,7 +3,7 @@ from typing import Any, Dict, List
 import requests
 
 from code_reviewer_agent.config import config
-from code_reviewer_agent.models.agent import CodeReviewResponse
+from code_reviewer_agent.models.reviewer_agent import CodeReviewResponse
 from code_reviewer_agent.utils.file_utils import get_file_languages
 from code_reviewer_agent.utils.rich_utils import (
     print_debug,

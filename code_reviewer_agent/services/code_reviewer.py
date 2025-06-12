@@ -7,7 +7,10 @@ import time
 from typing import Any, Dict, List, Optional
 
 from code_reviewer_agent.config.config import config
-from code_reviewer_agent.models.agent import CodeReviewResponse, get_code_review_agent
+from code_reviewer_agent.models.reviewer_agent import (
+    CodeReviewResponse,
+    get_code_review_agent,
+)
 from code_reviewer_agent.prompts.cr_agent import USER_PROMPT
 from code_reviewer_agent.services.github import (
     get_request_files as get_github_request_files,

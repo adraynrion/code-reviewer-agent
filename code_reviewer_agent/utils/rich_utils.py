@@ -1,5 +1,6 @@
 """Rich text utilities for the code reviewer agent."""
 
+import os
 from typing import Any
 
 from rich.console import Console
@@ -8,8 +9,6 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_rich_traceback
-
-from code_reviewer_agent.config.config import config
 
 # Define a custom theme for consistent styling
 custom_theme = Theme(
@@ -102,7 +101,7 @@ def print_debug(text: str) -> None:
         text: Debug message to display
 
     """
-    if config.logging.debug:
+    if os.getenv("DEBUG") == "True":
         console.print(f"[dim]{text}[/]")
 
 
@@ -201,7 +200,7 @@ def print_exception() -> None:
     ONLY if DEBUG is enabled.
 
     """
-    if config.logging.debug:
+    if os.getenv("DEBUG") == "True":
         console.print_exception(show_locals=True)
 
 

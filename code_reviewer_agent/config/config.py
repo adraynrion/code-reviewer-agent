@@ -1,11 +1,12 @@
 """Configuration management for the code reviewer agent."""
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from code_reviewer_agent.utils.rich_utils import print_debug, print_error
 
@@ -28,15 +29,15 @@ class CrawlerConfig(BaseModel):
 
     @field_validator("openai_api_key")
     @classmethod
-    def validate_openai_api_key(cls, v: str) -> str:
-        if cls.enabled and not v:
+    def validate_openai_api_key(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("enabled", False) and not v:
             raise ValueError("OpenAI API key is required")
         return v
 
     @field_validator("embedding_model")
     @classmethod
-    def validate_embedding_model(cls, v: str) -> str:
-        if cls.enabled and not v:
+    def validate_embedding_model(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("enabled", False) and not v:
             raise ValueError("Embedding model is required")
         return v
 
@@ -150,22 +151,22 @@ class ReviewerConfig(BaseModel):
 
     @field_validator("github_token")
     @classmethod
-    def validate_github_token(cls, v: str) -> str:
-        if cls.platform == "github" and not v:
+    def validate_github_token(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("platform") == "github" and not v:
             raise ValueError("GitHub token is required")
         return v
 
     @field_validator("gitlab_token")
     @classmethod
-    def validate_gitlab_token(cls, v: str) -> str:
-        if cls.platform == "gitlab" and not v:
+    def validate_gitlab_token(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("platform") == "gitlab" and not v:
             raise ValueError("GitLab token is required")
         return v
 
     @field_validator("gitlab_api_url")
     @classmethod
-    def validate_gitlab_api_url(cls, v: str) -> str:
-        if cls.platform == "gitlab" and not v:
+    def validate_gitlab_api_url(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("platform") == "gitlab" and not v:
             raise ValueError("GitLab API URL is required")
         return v
 
@@ -219,15 +220,15 @@ class LangfuseConfig(BaseModel):
 
     @field_validator("public_key")
     @classmethod
-    def validate_public_key(cls, v: str) -> str:
-        if cls.enabled and not v:
+    def validate_public_key(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("enabled", False) and not v:
             raise ValueError("Public key is required")
         return v
 
     @field_validator("secret_key")
     @classmethod
-    def validate_secret_key(cls, v: str) -> str:
-        if cls.enabled and not v:
+    def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("enabled", False) and not v:
             raise ValueError("Secret key is required")
         return v
 
@@ -370,6 +371,10 @@ class Config(BaseModel):
 
         # Convert the config data to a Config object
         config = Config(**config_data)
+
+        # Export DEBUG environment variable for use in rich_utils.py
+        os.environ["DEBUG"] = str(config.logging.debug)
+
         return config
 
     def print_config(self) -> None:

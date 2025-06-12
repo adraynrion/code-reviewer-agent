@@ -3,14 +3,12 @@
 import argparse
 import asyncio
 import sys
-from typing import Any, Dict
 
 import nest_asyncio
 from openai import OpenAI
-from pydantic import BaseModel, Field
 
 from code_reviewer_agent.config.config import config
-from code_reviewer_agent.utils.crawler_utils import crawl_urls
+from code_reviewer_agent.services.crawler_write import crawl_urls
 from code_reviewer_agent.utils.rich_utils import (
     console,
     print_error,
@@ -126,17 +124,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     return parser.parse_args()
-
-
-class CrawledDocument(BaseModel):
-    """Model for crawled document data."""
-
-    title: str = Field(..., description="Page title")
-    url: str = Field(..., description="Page URL")
-    content: str = Field(..., description="Page content")
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict, description="Additional metadata"
-    )
 
 
 async def main() -> None:

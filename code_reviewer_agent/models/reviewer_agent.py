@@ -1,23 +1,15 @@
 """Agent models and utilities."""
 
 import os
-from typing import Union
 
-from crawl4ai import LLMConfig
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.models import Model
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.google import GoogleProvider
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.settings import ModelSettings
-from supabase import Client, create_client
 
 from code_reviewer_agent.config.config import config
+from code_reviewer_agent.models.base_agent import get_model
 from code_reviewer_agent.prompts.cr_agent import SYSTEM_PROMPT
-from code_reviewer_agent.utils.crawler_utils import search_documents
+from code_reviewer_agent.services.crawler_read import search_documents
 from code_reviewer_agent.utils.rich_utils import (
     print_header,
     print_info,
@@ -65,41 +57,6 @@ class CodeReviewResponse(BaseModel):
         print_info(f"Code diff: {self.code_diff}")
         print_info(f"Comment: {self.comment}")
         print_info(f"Title: {self.title}")
-
-
-def get_supabase() -> Client:
-    """Initialize and return a Supabase client."""
-    return create_client(config.supabase.url, config.supabase.key)
-
-
-def get_model(as_llm_config: bool = False) -> Union[Model, LLMConfig]:
-    provider = config.reviewer.llm.provider
-    llm = config.reviewer.llm.model_name
-    api_key = config.reviewer.llm.api_key
-
-    if not as_llm_config:
-        if provider == "OpenAI" or provider == "TogetherAI":
-            return OpenAIModel(
-                llm,
-                provider=OpenAIProvider(
-                    base_url=config.reviewer.llm.base_url, api_key=api_key
-                ),
-            )
-        elif provider == "OpenRouter":
-            return OpenAIModel(llm, provider=OpenRouterProvider(api_key=api_key))
-        elif provider == "Google":
-            return GoogleModel(llm, provider=GoogleProvider(api_key=api_key))
-    else:
-        if provider == "OpenAI":
-            return LLMConfig(provider="openai/" + llm, api_token=api_key)
-        elif provider == "TogetherAI":
-            return LLMConfig(provider="together_ai/" + llm, api_token=api_key)
-        elif provider == "OpenRouter":
-            return LLMConfig(provider="openrouter/" + llm, api_token=api_key)
-        elif provider == "Google":
-            return LLMConfig(provider="gemini/" + llm, api_token=api_key)
-
-    raise ValueError(f"Unsupported provider: {provider}")
 
 
 def get_code_review_agent() -> Agent[None, str]:
