@@ -12,12 +12,13 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.settings import ModelSettings
 from supabase import Client, create_client
 
-from ..prompts.cr_agent import SYSTEM_PROMPT
-from ..utils.config import config
-from ..utils.crawler_utils import search_documents
-from ..utils.rich_utils import (
+from code_reviewer_agent.config.config import config
+from code_reviewer_agent.prompts.cr_agent import SYSTEM_PROMPT
+from code_reviewer_agent.utils.crawler_utils import search_documents
+from code_reviewer_agent.utils.rich_utils import (
     print_header,
     print_info,
     print_section,
@@ -68,23 +69,21 @@ class CodeReviewResponse(BaseModel):
 
 def get_supabase() -> Client:
     """Initialize and return a Supabase client."""
-    return create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
-
-
-def get_embedding_model_str() -> str:
-    """Get the embedding model string from environment variables."""
-    return config.EMBEDDING_MODEL
+    return create_client(config.supabase.url, config.supabase.key)
 
 
 def get_model(as_llm_config: bool = False) -> Union[Model, LLMConfig]:
-    provider = config.PROVIDER
-    llm = config.MODEL_CHOICE
-    api_key = config.LLM_API_KEY
+    provider = config.reviewer.llm.provider
+    llm = config.reviewer.llm.model_name
+    api_key = config.reviewer.llm.api_key
 
     if not as_llm_config:
         if provider == "OpenAI" or provider == "TogetherAI":
             return OpenAIModel(
-                llm, provider=OpenAIProvider(base_url=config.BASE_URL, api_key=api_key)
+                llm,
+                provider=OpenAIProvider(
+                    base_url=config.reviewer.llm.base_url, api_key=api_key
+                ),
             )
         elif provider == "OpenRouter":
             return OpenAIModel(llm, provider=OpenRouterProvider(api_key=api_key))
@@ -103,46 +102,55 @@ def get_model(as_llm_config: bool = False) -> Union[Model, LLMConfig]:
     raise ValueError(f"Unsupported provider: {provider}")
 
 
-def get_code_review_agent() -> Agent:
+def get_code_review_agent() -> Agent[None, str]:
     """Build and return an agent with the merged system prompt + custom user
     instructions, and the crawling search tool."""
 
     print_header("Generating the CR Agent")
+    instruction_path = config.reviewer.instruction_dir_path
 
-    # ========== Retrieving filesystem instructions ==========
-    print_section("Retrieving Filesystem Instructions")
-    print_info(f"Looking for instructions in: {config.LOCAL_FILE_DIR}")
+    # ========== Retrieving additional filesystem instructions ==========
+    print_section("Retrieving additional filesystem instructions")
 
-    filesystem_instructions = []
-    try:
-        # List all files in the instructions directory using direct filesystem access
-        instructions_files = [
-            f
-            for f in os.listdir(config.LOCAL_FILE_DIR)
-            if os.path.isfile(os.path.join(config.LOCAL_FILE_DIR, f))
-        ]
+    if os.path.exists(instruction_path) and os.path.isdir(instruction_path):
+        print_info(f"Looking for instructions in: {instruction_path}")
 
-        for file in instructions_files:
-            file_path = os.path.join(config.LOCAL_FILE_DIR, file)
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    filesystem_instructions.append(content)
-                    print_success(f"  - Loaded: {file} ({len(content)} bytes)")
-            except Exception as file_error:
-                print_warning(f"  - Failed to load {file}: {str(file_error)}")
+        filesystem_instructions = []
+        try:
+            # List all files in the instructions directory using direct filesystem access
+            instructions_files = [
+                f
+                for f in os.listdir(instruction_path)
+                if os.path.isfile(os.path.join(instruction_path, f))
+            ]
 
-        if not filesystem_instructions:
-            print_warning("No instruction files found or loaded successfully")
+            for file in instructions_files:
+                file_path = os.path.join(instruction_path, file)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        filesystem_instructions.append(content)
+                        print_success(f"  - Loaded: {file} ({len(content)} bytes)")
+                except Exception as file_error:
+                    print_warning(f"  - Failed to load {file}: {str(file_error)}")
+
+            if not filesystem_instructions:
+                print_warning("No instruction files found or loaded successfully")
+                print_warning("Continuing without filesystem instructions")
+            else:
+                print_success(
+                    f"Successfully loaded {len(filesystem_instructions)} instruction file(s)"
+                )
+
+        except Exception as e:
+            print_warning(f"Error while retrieving filesystem instructions: {str(e)}")
             print_warning("Continuing without filesystem instructions")
-        else:
-            print_success(
-                f"Successfully loaded {len(filesystem_instructions)} instruction file(s)"
-            )
 
-    except Exception as e:
-        print_warning(f"Error while retrieving filesystem instructions: {str(e)}")
-        print_warning("Continuing without filesystem instructions")
+    else:
+        print_warning(
+            "Additional filesystem instructions folder invalid or not found! "
+            "Continuing without any filesystem instructions."
+        )
 
     # ========== Building system prompt ==========
     print_section("Building System Prompt")
@@ -159,20 +167,25 @@ def get_code_review_agent() -> Agent:
     # ========== Building agent ==========
     print_success("Returning fully configured CR Agent")
     model = get_model()
-    if config.DEBUG:
+    if config.logging.debug:
         print_info(f"System prompt length: {len(system_prompt)}")
         print_info(f"Tools length: {len(tools)}")
-        print_info(f"Provider: {config.PROVIDER}")
-        print_info(f"Model: {config.MODEL_CHOICE}")
+        print_info(f"Provider: {config.reviewer.llm.provider}")
+        print_info(f"Model: {config.reviewer.llm.model_name}")
+
+    model_settings = ModelSettings(
+        max_tokens=config.reviewer.llm.max_tokens,
+        temperature=config.reviewer.llm.temperature,
+        top_p=config.reviewer.llm.top_p,
+    )
 
     return Agent(
         model=model,
-        # temperature=ai_config.temperature,
-        # max_tokens=ai_config.max_tokens,
-        # top_p=ai_config.top_p,
         system_prompt=system_prompt,
-        retries=5,
-        output_retries=5,
+        name="Code Reviewer Agent",
+        model_settings=model_settings,
+        retries=config.reviewer.llm.max_attempts,
+        output_retries=config.reviewer.llm.max_attempts,
         tools=tools,
         instrument=True,
     )

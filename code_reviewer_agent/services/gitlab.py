@@ -2,8 +2,9 @@ from typing import Any, Dict, List
 
 import requests
 
+from code_reviewer_agent.config import config
 from code_reviewer_agent.models.agent import CodeReviewResponse
-from code_reviewer_agent.utils.config import config
+from code_reviewer_agent.utils.file_utils import get_file_languages
 from code_reviewer_agent.utils.rich_utils import (
     print_debug,
     print_error,
@@ -14,8 +15,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_success,
     print_warning,
 )
-
-from ..utils.file_utils import get_file_languages
 
 
 def get_request_files(repository: str, mr_id: int) -> List[Dict[str, Any]]:
@@ -40,8 +39,8 @@ def get_request_files(repository: str, mr_id: int) -> List[Dict[str, Any]]:
         print_section("Connecting to GitLab repository", "🌐")
 
         print_info("Retrieving commits...")
-        headers = {"Private-Token": f"{config.GITLAB_TOKEN}"}
-        mr_metadata_url = f"{config.GITLAB_API_URL}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}"
+        headers = {"Private-Token": f"{config.reviewer.gitlab_token}"}
+        mr_metadata_url = f"{config.reviewer.gitlab_api_url}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}"
         mr_metadata_response = requests.get(mr_metadata_url, headers=headers)
         mr_metadata = mr_metadata_response.json()
         if mr_metadata_response.status_code != 200:
@@ -53,7 +52,7 @@ def get_request_files(repository: str, mr_id: int) -> List[Dict[str, Any]]:
         print_success("Successfully retrieved merge request commits")
 
         print_info("Retrieving changed files...")
-        url = f"{config.GITLAB_API_URL}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}/changes"
+        url = f"{config.reviewer.gitlab_api_url}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}/changes"
         mr_files = requests.get(url, headers=headers)
         if mr_files.status_code != 200:
             print_error(
@@ -114,7 +113,7 @@ async def post_gitlab_review(
     """Post one review comment to given GitLab repo and MR."""
     print_section(f"Posting to GitLab repo {repository} MR #{mr_id}", "📝")
     headers = {
-        "Private-Token": config.GITLAB_TOKEN,
+        "Private-Token": config.reviewer.gitlab_token,
         "Content-Type": "application/json",
     }
 
@@ -144,7 +143,7 @@ async def post_gitlab_review(
 
     print_info("Posting review...")
     comment_response = requests.post(
-        f"{config.GITLAB_API_URL}/projects/{repository}/merge_requests/{mr_id}/discussions",
+        f"{config.reviewer.gitlab_api_url}/projects/{repository}/merge_requests/{mr_id}/discussions",
         headers=headers,
         json=data,
     )
@@ -165,14 +164,14 @@ async def update_gitlab_mr(
     """Set owner of GITLAB_TOKEN as reviewer (if not the same as the Assignee of the MR)
     and 'reviewed_label' as label of given GitLab MR."""
     headers = {
-        "Private-Token": config.GITLAB_TOKEN,
+        "Private-Token": config.reviewer.gitlab_token,
         "Content-Type": "application/json",
     }
 
     print_info(f"Adding label '{reviewed_label}' to MR #{mr_id}...")
     # TODO: Retrieve existing label before POST (it replace every existing labels)
 
-    label_url = f"{config.GITLAB_API_URL}/projects/{repository}/merge_requests/{mr_id}?add_labels={reviewed_label}"
+    label_url = f"{config.reviewer.gitlab_api_url}/projects/{repository}/merge_requests/{mr_id}?add_labels={reviewed_label}"
     label_response = requests.put(label_url, headers=headers)
     if label_response.status_code != 200:
         raise Exception(
@@ -182,7 +181,7 @@ async def update_gitlab_mr(
 
     # ===== Set MR reviewer as the owner of the GITLAB_TOKEN =====
     print_info(f"Retrieving GITLAB_TOKEN owner...")
-    user_resp = requests.get(f"{config.GITLAB_API_URL}/user", headers=headers)
+    user_resp = requests.get(f"{config.reviewer.gitlab_api_url}/user", headers=headers)
     if user_resp.status_code != 200:
         raise Exception(
             f"Failed to get current user: {user_resp.status_code} - {user_resp.text}"
@@ -196,7 +195,7 @@ async def update_gitlab_mr(
 
     print_info(f"Setting reviewer as {reviewer_name} on MR #{mr_id}...")
     reviewer_url = (
-        f"{config.GITLAB_API_URL}/projects/"
+        f"{config.reviewer.gitlab_api_url}/projects/"
         f"{repository.replace('/', '%2F')}/merge_requests/{mr_id}"
         f"?reviewer_ids%5B%5D={reviewer_id}"
     )

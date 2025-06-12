@@ -3,10 +3,9 @@ import os
 
 import logfire
 import nest_asyncio
-from dotenv import load_dotenv
 from opentelemetry import trace
 
-load_dotenv()
+from code_reviewer_agent.config.config import config
 
 
 def scrubbing_callback(match: logfire.ScrubMatch) -> str:
@@ -31,9 +30,9 @@ def scrubbing_callback(match: logfire.ScrubMatch) -> str:
 
 # Configure Langfuse for agent observability
 def configure_langfuse() -> trace.Tracer:
-    LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
-    LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
-    LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "http://localhost:3002")
+    LANGFUSE_PUBLIC_KEY = config.langfuse.public_key
+    LANGFUSE_SECRET_KEY = config.langfuse.secret_key
+    LANGFUSE_HOST = config.langfuse.host
     LANGFUSE_AUTH = base64.b64encode(
         f"{LANGFUSE_PUBLIC_KEY}:{LANGFUSE_SECRET_KEY}".encode()
     ).decode()

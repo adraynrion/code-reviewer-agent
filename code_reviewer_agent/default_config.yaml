@@ -1,0 +1,42 @@
+# Code Reviewer Configuration
+# Copy this file to config.yaml and customize as needed
+
+# Crawler configuration
+crawler:
+  enabled: false
+  openai_api_key: ""
+  embedding_model: "text-embedding-3-small"
+
+# Reviewer configuration
+reviewer:
+  llm:
+    provider: "OpenAI"  # OpenAI, TogetherAI, OpenRouter, Google, Ollama
+    model_name: "gpt-4o-mini"  # e.g. gpt-4o-mini, anthropic/claude-3.7-sonnet, gemini-2.0-flash, mistrall-small3.1
+    base_url: "https://api.openai.com/v1"
+    api_key: ""
+    temperature: 0.2  # 0.0 to 2.0, higher is more creative/random
+    max_tokens: 500   # Maximum length of the generated message
+    top_p: 1.0        # Nucleus sampling parameter (0.0 to 1.0)
+    max_attempts: 3   # Maximum number of attempts to generate a valid message
+  instruction_dir_path: ""
+  platform: "github"
+  repository: ""
+  github_token: ""
+  # gitlab_token: ""
+  # gitlab_api_url: "https://gitlab.com/api/v4"
+
+# Supabase configuration
+supabase:
+  url: ""
+  key: ""
+
+# Langfuse configuration for tracing and observability
+langfuse:
+  enabled: false  # Set to true to enable Langfuse tracing
+  public_key: ""
+  secret_key: ""
+  host: "https://cloud.langfuse.com"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL

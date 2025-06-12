@@ -4,9 +4,8 @@ An intelligent code review agent that analyzes pull requests on GitHub and GitLa
 providing detailed feedback based on custom review instructions and language-specific best practices.
 
 This package provides the following main components:
-- `code_reviewer_agent`: Main entry point for the code review agent
-- `crawler_agent`: Web crawler for documentation processing
-- `setup-code-reviewer`: Interactive setup script for configuration
+- `review`: Main entry point for the code review agent
+- `crawl`: Web crawler for documentation processing
 
 """
 
@@ -15,14 +14,15 @@ __author__ = "Adraynrion"
 __email__ = "adraynrion@citizenofai.com"
 
 # Import main functionality to make it available at the package level
-from .services.code_reviewer import main as code_reviewer_main
-from .services.crawler import crawl_urls
+from code_reviewer_agent.services.code_reviewer import main as code_reviewer_main
+from code_reviewer_agent.services.crawler import crawl_urls
 
 # Export the main functions
-review_code = code_reviewer_main  # Backward compatibility
+review = code_reviewer_main
+crawl = crawl_urls
 __all__ = [
-    "review_code",
-    "crawl_urls",
+    "review",
+    "crawl",
     "__version__",
 ]
 

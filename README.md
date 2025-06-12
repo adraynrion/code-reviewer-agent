@@ -50,6 +50,7 @@ code-reviewer-agent/
 - 🧪 **Type Hints** - Full type annotations for better development experience
 - 📊 **Observability** - Built-in Langfuse integration for monitoring and analytics
 - 🔹 **Multi-Platform Support** - Works with both GitHub and GitLab
+- ⚙️ **Flexible Configuration** - Supports environment variables, config files, and CLI
 - 📦 **Modular Architecture** - Built using Model Context Protocol (MCP) for extensibility
 - 🗂️ **Vector Database Integration** - Stores and retrieves documentation using Supabase
 - 🌲 **Environment-based Configuration** - Simple setup with environment variables
@@ -62,7 +63,7 @@ code-reviewer-agent/
 - GitHub/GitLab account with appropriate permissions
 - API keys for required services (see Configuration)
 
-## 📦 Installation
+## 🚀 Installation
 
 1. Clone the repository:
 ```bash
@@ -76,9 +77,8 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
-3. Install the package in development mode:
+3. Install the package in development mode with all extras:
 ```bash
-# Install with all optional dependencies
 pip install -e '.[dev,crawler,langfuse]'
 
 # Or for minimal installation
@@ -89,15 +89,8 @@ pip install -e '.[crawler]'  # For web crawling functionality
 pip install -e '.[langfuse]'  # For Langfuse observability
 ```
 
-4. Set up your environment:
-```bash
-# Run the interactive setup script
-setup-code-reviewer
-
-# Or manually create a .env file
-cp .env.example .env
-# Edit the .env file with your configuration
-```
+4. Configure the application:
+Copy the default_config.yaml file to ~/.config/code-reviewer/config.yaml and modify it as needed.
 
 ## 🚀 Usage
 
@@ -105,10 +98,10 @@ cp .env.example .env
 
 ```bash
 # Run the code review agent
-code-reviewer-agent --help
+code-reviewer --help
 
 # Example: Review a pull request
-code-reviewer-agent --repo-url https://github.com/owner/repo --pr 123
+code-reviewer --repo-url https://github.com/owner/repo --pr 123
 ```
 
 ### Crawler Agent
@@ -169,6 +162,15 @@ make add-type-annotations
 make all
 ```
 
+## 📊 Monitoring and Observability
+
+The agent includes built-in integration with [Langfuse](https://langfuse.com) for comprehensive monitoring and observability. This integration provides:
+
+- **End-to-End Tracing**: Full trace of each code review request
+- **LLM Monitoring**: Detailed tracking of all LLM interactions
+- **Tool Usage**: Performance metrics for all tool calls
+- **Error Tracking**: Centralized error tracking with context
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -178,15 +180,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## 📊 Monitoring and Observability
-
-The agent includes built-in integration with [Langfuse](https://langfuse.com) for comprehensive monitoring and observability. This integration provides:
-
-- **End-to-End Tracing**: Full trace of each code review request
-- **LLM Monitoring**: Detailed tracking of all LLM interactions
-- **Tool Usage**: Performance metrics for all tool calls
-- **Error Tracking**: Centralized error tracking with context
 
 ## 📄 License
 

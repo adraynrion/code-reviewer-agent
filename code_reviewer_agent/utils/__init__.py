@@ -3,7 +3,7 @@
 # This file makes the utils directory a Python package
 
 # Import rich_utils to make it available when importing from utils
-from .rich_utils import (
+from code_reviewer_agent.utils.rich_utils import (
     confirm,
     console,
     print_code_block,

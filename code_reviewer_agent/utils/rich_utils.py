@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.theme import Theme
 from rich.traceback import install as install_rich_traceback
 
-from ..utils.config import config
+from code_reviewer_agent.config.config import config
 
 # Define a custom theme for consistent styling
 custom_theme = Theme(
@@ -102,7 +102,7 @@ def print_debug(text: str) -> None:
         text: Debug message to display
 
     """
-    if config.DEBUG:
+    if config.logging.debug:
         console.print(f"[dim]{text}[/]")
 
 
@@ -201,7 +201,7 @@ def print_exception() -> None:
     ONLY if DEBUG is enabled.
 
     """
-    if config.DEBUG:
+    if config.logging.debug:
         console.print_exception(show_locals=True)
 
 

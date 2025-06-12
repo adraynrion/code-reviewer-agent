@@ -6,17 +6,19 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from github import get_request_files as get_github_request_files
-from github import post_github_review, update_github_pr
-from gitlab import get_request_files as get_gitlab_request_files
-from gitlab import post_gitlab_review, update_gitlab_mr
-
+from code_reviewer_agent.config.config import config
+from code_reviewer_agent.models.agent import CodeReviewResponse, get_code_review_agent
 from code_reviewer_agent.prompts.cr_agent import USER_PROMPT
-
-from ..models.agent import CodeReviewResponse, get_code_review_agent
-from ..utils.config import config
-from ..utils.langfuse import configure_langfuse
-from ..utils.rich_utils import (
+from code_reviewer_agent.services.github import (
+    get_request_files as get_github_request_files,
+)
+from code_reviewer_agent.services.github import post_github_review, update_github_pr
+from code_reviewer_agent.services.gitlab import (
+    get_request_files as get_gitlab_request_files,
+)
+from code_reviewer_agent.services.gitlab import post_gitlab_review, update_gitlab_mr
+from code_reviewer_agent.utils.langfuse import configure_langfuse
+from code_reviewer_agent.utils.rich_utils import (
     console,
     print_debug,
     print_diff,
@@ -112,52 +114,52 @@ async def main() -> None:
     console.clear()
     print_header("Starting Code Reviewer Agent process")
 
-    # Checking required variables
-    if not config.validate_code_review_process():
-        sys.exit(1)
-
-    if config.DEBUG:
+    if config.logging.debug:
         config.print_config()
 
     args = parse_arguments()
-    platform: str = args.platform or config.PLATFORM
-    repository: str = args.repository or config.REPOSITORY
-    instructions_path: str = args.instructions_path or config.LOCAL_FILE_DIR
+    platform: str = args.platform or config.reviewer.platform
+    repository: str = args.repository or config.reviewer.repository
+    instructions_path: str = (
+        args.instructions_path or config.reviewer.instruction_dir_path
+    )
     request_id: int = args.id
     reviewed_label: str = "ReviewedByAI"
 
-    if config.DEBUG:
+    if config.logging.debug:
         print_section("Final Configuration retrieved:", "⚙️")
         print_info(f"Platform: {platform.upper()}")
         print_info(f"Repository: {repository}")
         print_info(f"Instructions path: {instructions_path}")
         print_info(f"Request ID: {request_id}")
 
-    # Validate inputs
-    if platform not in ("github", "gitlab"):
-        print_error("Invalid platform. Must be either 'github' or 'gitlab'")
-        sys.exit(1)
+    try:
+        # Validate inputs
+        if platform not in ("github", "gitlab"):
+            raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'.")
 
-    if platform == "github" and not config.GITHUB_TOKEN:
-        print_error(
-            "GITHUB_TOKEN environment variable is required when platform is 'github'"
-        )
-        sys.exit(1)
+        if platform == "github" and not config.reviewer.github_token:
+            raise ValueError(
+                "github_token config variable is required when platform is 'github'."
+            )
 
-    if platform == "gitlab" and not config.GITLAB_TOKEN:
-        print_error(
-            "GITLAB_TOKEN environment variable is required when platform is 'gitlab'"
-        )
-        sys.exit(1)
+        if platform == "gitlab" and not config.reviewer.gitlab_token:
+            raise ValueError(
+                "gitlab_token config variable is required when platform is 'gitlab'."
+            )
 
-    if not repository:
-        print_error(
-            "Repository not specified. Use --repository or set REPOSITORY environment variable"
-        )
-        sys.exit(1)
+        if not repository:
+            raise ValueError(
+                "Repository not specified. Use --repository argument or set repository config variable."
+            )
 
-    if not request_id:
-        print_error("Request ID not specified. Use --id, --pr-id or --mr-id")
+        if not request_id:
+            raise ValueError(
+                "Request ID not specified. Use --id, --pr-id or --mr-id argument."
+            )
+    except ValueError as e:
+        print_error(f"Error validating inputs: {str(e)}")
+        print_exception()
         sys.exit(1)
 
     # Fetch request files
@@ -196,7 +198,7 @@ async def main() -> None:
                         print_warning(f"No changes found for file: {filename}")
                         continue
 
-                    if config.DEBUG:
+                    if config.logging.debug:
                         print_info(f"Reviewing file: {filename}")
                         print_info(f"  - Languages: {languages}")
                         print_diff(patch)
@@ -252,7 +254,7 @@ async def main() -> None:
                             f"Code review response successfully retrieved from Agent"
                         )
 
-                        if config.DEBUG:
+                        if config.logging.debug:
                             reviewer_output.print_info()
 
                         # Set langfuse span attributes

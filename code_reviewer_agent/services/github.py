@@ -2,8 +2,9 @@ from typing import Any, Dict, List
 
 import requests
 
+from code_reviewer_agent.config import config
 from code_reviewer_agent.models.agent import CodeReviewResponse
-from code_reviewer_agent.utils.config import config
+from code_reviewer_agent.utils.file_utils import get_file_languages
 from code_reviewer_agent.utils.rich_utils import (
     print_debug,
     print_error,
@@ -14,8 +15,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_success,
     print_warning,
 )
-
-from ..utils.file_utils import get_file_languages
 
 
 def get_request_files(repository: str, pr_id: int) -> List[Dict[str, Any]]:
@@ -40,7 +39,7 @@ def get_request_files(repository: str, pr_id: int) -> List[Dict[str, Any]]:
         print_section("Connecting to GitHub repository", "🌐")
 
         print_info("Retrieving commits...")
-        headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
+        headers = {"Authorization": f"token {config.reviewer.github_token}"}
         pr_metadata_url = (
             f"https://api.github.com/repos/{repository}/pulls/{pr_id}/commits"
         )
@@ -116,7 +115,7 @@ async def post_github_review(
     """Post one review comment to given GitHub repo and PR."""
     print_section(f"Posting to GitHub repo {repository} PR #{pr_id}", "📝")
     headers = {
-        "Authorization": f"token {config.GITHUB_TOKEN}",
+        "Authorization": f"token {config.reviewer.github_token}",
         "Accept": "application/vnd.github.v3+json",
     }
 
@@ -163,7 +162,7 @@ async def update_github_pr(
     """Set owner of GITHUB_TOKEN as reviewer (if not the same as the Assignee of the PR)
     and 'reviewed_label' as label of given GitHub PR."""
     headers = {
-        "Authorization": f"token {config.GITHUB_TOKEN}",
+        "Authorization": f"token {config.reviewer.github_token}",
         "Accept": "application/vnd.github.v3+json",
     }
 

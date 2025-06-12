@@ -9,9 +9,9 @@ import nest_asyncio
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from ..utils.config import config
-from ..utils.crawler_utils import crawl_urls
-from ..utils.rich_utils import (
+from code_reviewer_agent.config.config import config
+from code_reviewer_agent.utils.crawler_utils import crawl_urls
+from code_reviewer_agent.utils.rich_utils import (
     console,
     print_error,
     print_header,
@@ -144,11 +144,7 @@ async def main() -> None:
     console.clear()
     print_header("Starting Web Crawler Service")
 
-    # Checking required variables
-    if not config.validate():
-        sys.exit(1)
-
-    if config.DEBUG:
+    if config.logging.debug:
         config.print_config()
 
     # Parse command line arguments
@@ -180,7 +176,7 @@ async def main() -> None:
         sys.exit(1)
 
     # Print configuration summary if DEBUG
-    if config.DEBUG:
+    if config.logging.debug:
         print_section(f"Crawling with the following settings:", "🕷️")
         print_info(f"  • URLs: {', '.join(urls)}")
         print_info(f"  • Max pages per URL: {max_pages}")

@@ -3,7 +3,7 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "code-reviewer-agent"
+name = "code-reviewer"
 dynamic = ["version"]
 description = "An intelligent code review agent for GitHub and GitLab pull requests"
 readme = "README.md"
@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "crawl4ai>=0.6.3,<1.0.0",
+    "click>=8.0.0,<9.0.0",
     "logfire>=3.14.0,<4.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",
     "openai>=1.82.1,<2.0.0",
@@ -30,6 +31,7 @@ dependencies = [
     "pydantic-ai>=0.2.9,<1.0.0",
     "pydantic-ai-slim>=0.2.9,<1.0.0",
     "python-dotenv>=1.1.0,<2.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
     "rich>=14.0.0,<15.0.0",
     "supabase>=2.15.2,<3.0.0",
     "vecs>=0.4.5,<1.0.0"
@@ -71,9 +73,7 @@ langfuse = [
 ]
 
 [project.entry-points.console_scripts]
-code-reviewer-agent = "code_reviewer_agent.__main__:main"
-crawler-agent = "code_reviewer_agent.services.crawler:main"
-setup-code-reviewer = "code_reviewer_agent.setup_env:setup_environment"
+code-reviewer = "code_reviewer_agent.__main__:cli"
 
 [tool.setuptools]
 packages = ["code_reviewer_agent"]
