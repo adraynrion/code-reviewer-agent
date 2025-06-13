@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "code-reviewer"
 dynamic = ["version"]
-description = "An intelligent code review agent for GitHub and GitLab pull requests"
+description = "An intelligent code reviewer agent for GitHub and GitLab pull requests"
 readme = "README.md"
 requires-python = ">=3.11.9,<3.12.0"
 authors = [
@@ -22,8 +22,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "crawl4ai>=0.6.3,<1.0.0",
-    "click>=8.0.0,<9.0.0",
+    "click>=8.1.0,<9.0.0",
     "logfire>=3.14.0,<4.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",
     "openai>=1.82.1,<2.0.0",
@@ -31,7 +30,7 @@ dependencies = [
     "pydantic-ai>=0.2.9,<1.0.0",
     "pydantic-ai-slim>=0.2.9,<1.0.0",
     "python-dotenv>=1.1.0,<2.0.0",
-    "pyyaml>=6.0.0,<7.0.0",
+    "PyYAML>=6.0.2,<7.0.0",
     "rich>=14.0.0,<15.0.0",
     "supabase>=2.15.2,<3.0.0",
     "vecs>=0.4.5,<1.0.0"
@@ -48,6 +47,7 @@ dev = [
     "pytest-asyncio>=0.23.0,<0.24.0",
     "types-PyYAML>=6.0.0,<7.0.0",
     "types-requests>=2.31.0,<3.0.0",
+    "pyinstaller>=6.0.0,<7.0.0",
     "types-setuptools>=69.5.0,<70.0.0",
     "types-pyinstaller>=6.13.0,<7.0.0",
     "flake8-annotations>=3.0.0,<4.0.0",
@@ -65,7 +65,7 @@ dev = [
     "pycln>=2.4.0,<3.0.0",
 ]
 crawler = [
-    "crawl4ai>=0.5.0,<1.0.0",
+    "crawl4ai>=0.6.3,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",
 ]
 langfuse = [
