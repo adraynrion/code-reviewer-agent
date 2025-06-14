@@ -112,7 +112,7 @@ def parse_arguments() -> argparse.Namespace:
         sys.exit(1)
 
 
-async def main() -> None:
+async def main(platform: str, repository: str, id: int, instructions_path: str) -> None:
     """Main entry point for the code review agent."""
     console.clear()
     print_header("Starting Code Reviewer Agent process")
@@ -120,13 +120,12 @@ async def main() -> None:
     if config.logging.debug:
         config.print_config()
 
-    args = parse_arguments()
-    platform: str = args.platform or config.reviewer.platform
-    repository: str = args.repository or config.reviewer.repository
+    platform: str = platform or config.reviewer.platform
+    repository: str = repository or config.reviewer.repository
     instructions_path: str = (
-        args.instructions_path or config.reviewer.instruction_dir_path
+        instructions_path or config.reviewer.instruction_dir_path
     )
-    request_id: int = args.id
+    request_id: int = id
     reviewed_label: str = "ReviewedByAI"
 
     if config.logging.debug:

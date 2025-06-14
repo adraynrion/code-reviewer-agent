@@ -126,7 +126,7 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def main() -> None:
+async def main(urls, **kwargs) -> None:
     """Main entry point for the crawler service."""
     console.clear()
     print_header("Starting Web Crawler Service")
@@ -135,7 +135,7 @@ async def main() -> None:
         config.print_config()
 
     # Parse command line arguments
-    args = parse_arguments()
+    args = argparse.Namespace(urls=urls, **kwargs)
     urls = args.urls
     max_pages = args.max_pages
     max_depth = args.max_depth

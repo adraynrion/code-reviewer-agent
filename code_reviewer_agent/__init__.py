@@ -9,7 +9,7 @@ This package provides the following main components:
 
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Adraynrion"
 __email__ = "adraynrion@citizenofai.com"
 

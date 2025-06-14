@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Software Development :: Version Control :: Git",
     "Topic :: Software Development :: Quality Assurance",
-    "Typing :: Typed",
+    "Typing :: Typed"
 ]
 dependencies = [
     "click>=8.1.0,<9.0.0",
@@ -62,14 +62,14 @@ dev = [
     "autotyping>=24.9.0",
     "libcst>=1.1.0",
     "docformatter>=1.7.0,<2.0.0",
-    "pycln>=2.4.0,<3.0.0",
+    "pycln>=2.4.0,<3.0.0"
 ]
 crawler = [
     "crawl4ai>=0.6.3,<1.0.0",
-    "nest-asyncio>=1.6.0,<2.0.0",
+    "nest-asyncio>=1.6.0,<2.0.0"
 ]
 langfuse = [
-    "langfuse>=2.0.0,<3.0.0",
+    "langfuse>=2.0.0,<3.0.0"
 ]
 
 [project.entry-points.console_scripts]
@@ -143,7 +143,7 @@ source = ["code_reviewer_agent"]
 include = ["code_reviewer_agent/*.py"]
 omit = [
     "code_reviewer_agent/__main__.py",
-    "code_reviewer_agent/__init__.py",
+    "code_reviewer_agent/__init__.py"
 ]
 
 [tool.coverage.report]
@@ -157,5 +157,5 @@ exclude_lines = [
     "pass",
     "raise ImportError",
     "raise ValueError",
-    "@abstractmethod",
+    "@abstractmethod"
 ]
