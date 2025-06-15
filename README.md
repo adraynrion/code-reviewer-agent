@@ -10,38 +10,6 @@
 
 An intelligent code review agent that analyzes pull requests on GitHub and GitLab, providing detailed feedback based on custom review instructions and language-specific best practices. Also includes a web crawler agent for documentation processing.
 
-## 🏗️ Project Structure
-
-```
-code-reviewer-agent/
-├── code_reviewer_agent/     # Main package
-│   ├── __init__.py          # Package initialization
-│   ├── __main__.py          # Main entry point
-│   ├── models/              # Data models and schemas
-│   │   └── agent.py         # Agent model definitions
-│   ├── prompts/             # Prompt templates
-│   │   └── agent.py         # Agent prompt templates
-│   ├── services/            # Core services
-│   │   ├── __init__.py
-│   │   ├── code_reviewer.py # Code review service
-│   │   └── crawler.py       # Web crawler service
-│   └── utils/               # Utility functions
-│       ├── __init__.py
-│       ├── config.py        # Configuration utilities
-│       ├── file_utils.py    # File handling utilities
-│       └── langfuse.py      # Langfuse integration
-├── scripts/                 # Utility scripts
-│   └── configure_langfuse.py
-├── tests/                   # Test suite
-├── .env.example             # Example environment variables
-├── .gitignore
-├── LICENSE
-├── Makefile
-├── pyproject.toml
-├── README.md
-└── requirements.txt
-```
-
 ## ✨ Features
 
 - 🤖 **AI-Powered** - Uses advanced language models to understand code changes

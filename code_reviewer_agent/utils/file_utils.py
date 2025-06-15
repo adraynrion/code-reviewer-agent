@@ -1,28 +1,27 @@
-"""File utility functions for the code review agent."""
-
 import os
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Set, Tuple, Union
+
+from code_reviewer_agent.models.base_types import StringValidator
 
 
-def _detect_language(filename: str) -> list[str]:
-    """Detect programming languages used based on the filename.
+class Filename(StringValidator):
+    pass
 
-    Args:
-        filename: The filename to detect the language for
 
-    Returns:
-        The detected programming languages.
+class FilesPath(Union[str, List[str]]):
+    pass
 
-    """
-    # Simple file extension based detection
-    ext = filename.split(".")[-1].lower()
 
-    # Handle files without extensions
-    if not ext or ext == filename:
-        return []
+class LanguageTuple(Tuple[str]):
+    pass
 
-    # Language detection based on file extension
-    language_map = {
+
+class FileLanguages(Dict[str, Set[str]]):
+    pass
+
+
+class LanguageUtils:
+    _language_dict = {
         # Programming languages
         "py": ["python"],
         "js": ["javascript"],
@@ -97,36 +96,21 @@ def _detect_language(filename: str) -> list[str]:
         "editorconfig": ["editorconfig"],
     }
 
-    return language_map.get(ext, [])
+    @classmethod
+    def _detect_language(cls, filename: Filename) -> LanguageTuple:
+        ext = filename.split(".")[-1].lower()
+        if not ext or ext == filename:
+            return LanguageTuple()
+        return cls._language_dict.get(ext, LanguageTuple())
 
-
-def get_file_languages(file_paths: Union[str, List[str]]) -> Dict[str, Set[str]]:
-    """Get the programming languages used in the given files.
-
-    Args:
-        file_paths: A single file path or a list of file paths to analyze
-
-    Returns:
-        Dictionary mapping file paths to detected languages
-
-    """
-    # Convert single file path to list for consistent processing
-    if isinstance(file_paths, str):
-        file_paths = [file_paths]
-
-    languages: Dict[str, Set[str]] = {}
-
-    for file_path in file_paths:
-        # Get the filename from the path
-        filename = os.path.basename(file_path)
-
-        # Detect languages for the current file
-        detected_languages = _detect_language(filename)
-
-        # Add file to each detected language's set
-        for lang in detected_languages:
-            if lang not in languages:
-                languages[file_path] = set()
-            languages[file_path].add(lang)
-
-    return languages
+    @classmethod
+    def get_file_languages(cls, file_paths: FilesPath) -> FileLanguages:
+        languages: FileLanguages = {}
+        for file_path in file_paths:
+            filename = os.path.basename(file_path)
+            detected_languages = cls._detect_language(filename)
+            for lang in detected_languages:
+                if file_path not in languages:
+                    languages[file_path] = set()
+                languages[file_path].add(lang)
+        return languages

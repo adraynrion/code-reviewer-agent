@@ -1,12 +1,7 @@
-"""Web crawler service for the code review agent."""
-
-from typing import Any, Dict, List
-
-import nest_asyncio
 from openai import OpenAI
+from supabase._sync.client import SyncClient
 
-from code_reviewer_agent.config.config import config
-from code_reviewer_agent.models.base_agent import get_supabase
+from code_reviewer_agent.models.crawler_agents import ConfigArgs, CrawledDocuments
 from code_reviewer_agent.utils.rich_utils import (
     print_error,
     print_info,
@@ -15,59 +10,53 @@ from code_reviewer_agent.utils.rich_utils import (
     print_warning,
 )
 
-# Apply nest_asyncio to allow nested event loops
-nest_asyncio.apply()
 
-# Initialize OpenAI client
-openai_client = OpenAI()
-# Initialize Supabase client
-supabase_client = get_supabase()
+class CrawlerReader:
+    _openai_client: OpenAI
+    supabase_client: SyncClient
+    embedding_model: str
+    debug: bool
 
+    def __init__(self, args: ConfigArgs) -> None:
+        self._openai_client = args.get("openai_client")
+        self.supabase_client = args.get("supabase_client")
+        self.embedding_model = args.get("embedding_model")
+        self.debug = args.get("debug")
 
-async def search_documents(
-    query: str, match_threshold: float = 0.8
-) -> List[Dict[str, Any]]:
-    """Search for documents chunks similar to the query using embeddings.
+    def search_documents(
+        self, query: str, match_threshold: float = 0.8
+    ) -> CrawledDocuments:
+        try:
+            print_info(f"Generating embeddings for query: {query}")
+            embeddings_response = self._openai_client.embeddings.create(
+                input=query, model=self.embedding_model
+            )
+            embedding = embeddings_response.data[0].embedding
 
-    Args:
-        query: The search query string
-        match_threshold: Similarity threshold for document matching (0-1)
+            print_info(f"Searching documents with threshold: {match_threshold}")
+            response = self.supabase_client.rpc(
+                "match_documents",
+                {
+                    "query_embedding": embedding,
+                    "match_threshold": match_threshold,
+                },
+            ).execute()
 
-    Returns:
-        List of matching document chunks with their metadata
+            if not hasattr(response, "data"):
+                raise ValueError("Unexpected response format from Supabase")
 
-    Raises:
-        ValueError: If the response from Supabase is not in the expected format
+            results = [dict(item) for item in response.data]
+            print_success(f"Found {len(results)} matching document chunks(s)")
 
-    """
-    try:
-        print_info(f"Generating embeddings for query: {query}")
-        embeddings_response = openai_client.embeddings.create(
-            input=query, model=config.crawler.embedding_model
-        )
-        embedding = embeddings_response.data[0].embedding
+            if self.debug:
+                for i, result in enumerate(results):
+                    print_section(f"Match {i + 1}")
+                    print_info(f"  Content: {result.get('content', '')}")
+                    print_info(f"  Similarity: {result.get('similarity', 0):.4f}")
 
-        print_info(f"Searching documents with threshold: {match_threshold}")
-        response = supabase_client.rpc(
-            "match_documents",
-            {"query_embedding": embedding, "match_threshold": match_threshold},
-        ).execute()
+            return results
 
-        if not hasattr(response, "data"):
-            print_error("Unexpected response format from Supabase")
-            raise ValueError("Unexpected response format from Supabase")
-
-        results = [dict(item) for item in response.data]
-        print_success(f"Found {len(results)} matching document chunks(s)")
-
-        if results and config.logging.debug:
-            print_section("Top match:")
-            print_info(f"  Content: {results[0].get('content', '')[:200]}...")
-            print_info(f"  Similarity: {results[0].get('similarity', 0):.4f}")
-
-        return results
-
-    except Exception as e:
-        print_error(f"Error searching documents: {str(e)}")
-        print_warning("Search failed, proceeding with empty results")
-        return []
+        except Exception as e:
+            print_error(f"Error searching documents: {str(e)}")
+            print_warning("Search failed, proceeding with empty results")
+            return []

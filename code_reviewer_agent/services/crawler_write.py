@@ -1,40 +1,19 @@
-"""Web crawler service for the code review agent."""
-
 from typing import Any, Dict, List, Optional
 
-import nest_asyncio
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, LLMConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 from crawl4ai.extraction_strategy import LLMExtractionStrategy
 from openai import OpenAI
+from postgrest._sync.request_builder import SyncRequestBuilder
 from pydantic import BaseModel, Field
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
-from supabase import Client
 
-from code_reviewer_agent.config.config import config
-from code_reviewer_agent.models.base_agent import get_model, get_supabase
-from code_reviewer_agent.utils.rich_utils import (
-    print_error,
-    print_exception,
-    print_info,
-    print_section,
-    print_success,
-    print_warning,
-)
-
-# Apply nest_asyncio to allow nested event loops
-nest_asyncio.apply()
-
-# Initialize OpenAI client
-openai_client = OpenAI()
-# Initialize Supabase client
-supabase_client = get_supabase()
+from code_reviewer_agent.models.crawler_agents import ConfigArgs, CrawledDocuments
+from code_reviewer_agent.utils.rich_utils import print_debug, print_section
 
 
-class CrawledDocument(BaseModel):
-    """Model for crawled document data."""
-
+class CrawledDocumentModel(BaseModel):
     title: str = Field(..., description="Page title")
     url: str = Field(..., description="Page URL")
     content: str = Field(..., description="Page content")
@@ -43,304 +22,281 @@ class CrawledDocument(BaseModel):
     )
 
 
-async def crawl_urls(
-    urls: List[str],
-    max_pages: int = 5,
-    max_depth: int = 3,
-    concurrent_tasks: int = 3,
-    extraction_type: str = "schema",
-    chunk_token_threshold: int = 1000,
-    overlap_rate: float = 0.1,
-    temperature: float = 0.1,
-    max_tokens: int = 800,
-    headless: bool = True,
-    locale: str = "en-US",
-    timezone: str = "UTC",
-    keywords: Optional[List[str]] = None,
-    keyword_weight: float = 0.7,
-) -> List[Dict[str, Any]]:
-    """Crawl a list of URLs and return the extracted content.
+class CrawlerWritter:
+    _openai_client: OpenAI
+    _supabase_table: SyncRequestBuilder[Dict[str, Any]]
+    urls: List[str]
+    max_pages: int
+    max_depth: int
+    concurrent_tasks: int
+    _extraction_type: str
+    chunk_token_threshold: int
+    overlap_rate: float
+    temperature: float
+    max_tokens: int
+    headless: bool
+    locale: str
+    timezone: str
+    keywords: Optional[List[str]]
+    keyword_weight: float
+    prefixed_provider: str
+    base_url: str
+    api_token: str
+    embedding_model: str
 
-    Args:
-        urls: List of URLs to crawl
-        max_pages: Maximum number of pages to crawl per URL
-        max_depth: Maximum depth of the crawl
-        concurrent_tasks: Maximum number of concurrent crawling tasks
-        extraction_type: Type of content extraction ('schema' or 'block')
-        chunk_token_threshold: Token threshold for content chunking
-        overlap_rate: Overlap rate between chunks
-        temperature: Temperature for LLM generation
-        max_tokens: Maximum tokens for LLM generation
-        headless: Whether to run browser in headless mode
-        locale: Browser locale
-        timezone: Browser timezone
-        keywords: List of keywords for content relevance scoring
-        keyword_weight: Weight for keyword relevance scoring
+    def __init__(self, args: ConfigArgs) -> None:
+        self._openai_client = args.get("openai_client")
+        self.supabase_table = args.get("supabase_table")
+        self.urls = args.get("urls")
+        self.max_pages = args.get("max_pages")
+        self.max_depth = args.get("max_depth")
+        self.concurrent_tasks = args.get("concurrent_tasks")
+        self._extraction_type = args.get("extraction_type")
+        self.chunk_token_threshold = args.get("chunk_token_threshold")
+        self.overlap_rate = args.get("overlap_rate")
+        self.temperature = args.get("temperature")
+        self.max_tokens = args.get("max_tokens")
+        self.headless = args.get("headless")
+        self.locale = args.get("locale")
+        self.timezone = args.get("timezone")
+        self.keywords = args.get("keywords")
+        self.keyword_weight = args.get("keyword_weight")
+        self.prefixed_provider = args.get("prefixed_provider")
+        self.base_url = args.get("base_url")
+        self.api_token = args.get("api_token")
+        self.embedding_model = args.get("embedding_model")
 
-    Returns:
-        List of dictionaries containing crawled data
+    @property
+    def supabase_table(self) -> SyncRequestBuilder[Dict[str, Any]]:
+        return self._supabase_table
 
-    """
-    print_section("Starting Web Crawler", "")
-    print_info(f"Crawling {len(urls)} URLs with max {max_pages} pages each")
+    @supabase_table.setter
+    def supabase_table(self, value: SyncRequestBuilder[Dict[str, Any]]):
+        if not value or not isinstance(value, SyncRequestBuilder):
+            raise ValueError("Supabase table must be an instance of SyncRequestBuilder")
+        self._supabase_table = value
 
-    if keywords:
-        print_info(
-            f"Using keywords for relevance: {', '.join(keywords[:3])}{'...' if len(keywords) > 3 else ''}"
+    @property
+    def extraction_type(self) -> str:
+        return self._extraction_type
+
+    @extraction_type.setter
+    def extraction_type(self, value: str):
+        if value not in ["schema", "block"]:
+            raise ValueError("Extraction type must be 'schema' or 'block'")
+        self._extraction_type = value
+
+        self.extraction_strategy = LLMExtractionStrategy(
+            llm_config=LLMConfig(
+                provider=self.prefixed_provider,
+                api_token=self.api_token,
+                base_url=self.base_url,
+                temprature=self.temperature,
+                max_tokens=self.max_tokens,
+            ),
+            schema=CrawledDocumentModel,
+            extraction_type=self._extraction_type,
+            chunk_token_threshold=self.chunk_token_threshold,
+            overlap_rate=self.overlap_rate,
         )
 
-    # Set up the crawler with progress tracking
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
-        # Create a task for overall progress
-        main_task = progress.add_task("[cyan]Initializing crawler...", total=len(urls))
+    @property
+    def extraction_strategy(self) -> LLMExtractionStrategy:
+        return self._extraction_strategy
+
+    @extraction_strategy.setter
+    def extraction_strategy(self, extraction_strategy: LLMExtractionStrategy):
+        if not isinstance(extraction_strategy, LLMExtractionStrategy):
+            raise ValueError(
+                "Extraction strategy must be an instance of LLMExtractionStrategy"
+            )
+        self._extraction_strategy = extraction_strategy
 
         # Set up the browser configuration
         browser_config = BrowserConfig(
-            headless=headless,
-            locale=locale,
-            timezone=timezone,
+            headless=self.headless,
+            locale=self.locale,
+            timezone=self.timezone,
         )
 
         # Configure the crawling strategy with keywords if provided
         strategy = BestFirstCrawlingStrategy(
-            max_pages=max_pages,
-            max_depth=max_depth,
-            max_concurrent_tasks=concurrent_tasks,
+            max_pages=self.max_pages,
+            max_depth=self.max_depth,
+            max_concurrent_tasks=self.concurrent_tasks,
         )
 
-        if keywords:
+        if self.keywords:
             strategy.scorer = KeywordRelevanceScorer(
-                keywords=keywords, weight=keyword_weight
+                keywords=self.keywords,
+                weight=self.keyword_weight,
             )
 
-        # Set up the extraction strategy
-        progress.update(main_task, description="[cyan]Setting up extraction...")
-
-        try:
-            if extraction_type == "schema":
-                extraction_strategy = LLMExtractionStrategy.with_auto_schema(
-                    model=get_model(),
-                    schema=CrawledDocument,
-                    chunk_token_threshold=chunk_token_threshold,
-                    overlap_rate=overlap_rate,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                print_success(f"Using schema-based extraction with {get_model()}")
-            else:
-                extraction_strategy = LLMExtractionStrategy.with_auto_chunking(
-                    model=get_model(),
-                    chunk_token_threshold=chunk_token_threshold,
-                    overlap_rate=overlap_rate,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                print_success(f"Using block-based extraction with {get_model()}")
-
-        except Exception as e:
-            print_error(f"Failed to initialize extraction strategy: {str(e)}")
-            return []
-
         # Create the crawler
-        crawler = AsyncWebCrawler(
+        self._crawler = AsyncWebCrawler(
             browser_config=browser_config,
             crawling_strategy=strategy,
             extraction_strategy=extraction_strategy,
         )
 
-        # Run the crawler for each URL
-        results = []
-        successful_crawls = 0
+    @property
+    def crawler(self) -> AsyncWebCrawler:
+        return self._crawler
 
-        for i, url in enumerate(urls, 1):
-            url_task = progress.add_task(
-                f"[green]Crawling URL {i}/{len(urls)}", total=1
-            )
-            progress.update(
-                main_task, description=f"[cyan]Processing URL {i}/{len(urls)}"
-            )
+    async def crawl_urls(self) -> CrawledDocuments:
+        if not self.urls or len(self.urls) == 0:
+            raise ValueError("At least one URL is required")
 
+        print_section("Starting Web Crawler", "🌐")
+        print_debug(
+            f"Crawling {len(self.urls)} URLs with max {self.max_pages} pages each"
+        )
+        print_debug(
+            f"Using keywords for relevance: {', '.join(self.keywords) if self.keywords else 'None'}"
+        )
+
+        # Set up the crawler with progress tracking
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            # Create a task for overall progress
+            main_task = progress.add_task(
+                "[cyan]Initializing crawler...", total=len(self.urls)
+            )
+            progress.update(main_task, description="[cyan]Setting up extraction...")
+
+            i = 0
+            results = []
+            successful_crawls = 0
             try:
-                # Crawl the URL
-                progress.update(url_task, description=f"[green]Crawling: {url}")
-                result = await crawler.crawl(
-                    url,
+                async for result in await self.crawler.arun_many(
+                    urls=self.urls,
                     config=CrawlerRunConfig(
-                        max_pages=max_pages,
-                        max_depth=max_depth,
-                        max_concurrent_tasks=concurrent_tasks,
+                        max_pages=self.max_pages,
+                        max_depth=self.max_depth,
+                        max_concurrent_tasks=self.concurrent_tasks,
                     ),
+                ):
+                    i += 1
+                    url = self.urls[i]
+                    progress.update(
+                        main_task,
+                        description=f"[cyan]Processing URL {i}/{len(self.urls)}",
+                    )
+
+                    if not result or not hasattr(result, "extracted_contents"):
+                        # Update main progress
+                        progress.update(main_task, advance=1)
+                        continue
+
+                    try:
+                        # Process each extracted document
+                        docs = result.extracted_contents
+                        for doc in docs:
+                            doc_data = (
+                                doc.model_dump()
+                                if hasattr(doc, "model_dump")
+                                else dict(doc)
+                            )
+                            doc_data["url"] = url
+                            document_title = doc_data.get("title", "Untitled")
+
+                            try:
+                                # Create a task for each document
+                                doc_task_id = progress.add_task(
+                                    f"[cyan]Processing document: {document_title}",
+                                    total=1,
+                                )
+                                # Store the document with progress tracking
+                                success = await self.store_doc(
+                                    doc_data, progress, doc_task_id
+                                )
+                                if success:
+                                    results.append(doc_data)
+                                    successful_crawls += 1
+                                    description = (
+                                        f"[green]✓ Correctly stored: {document_title}"
+                                    )
+                                else:
+                                    description = (
+                                        f"[yellow]! Failed to store: {document_title}"
+                                    )
+                                progress.update(doc_task_id, description=description)
+                            except Exception as e:
+                                progress.update(
+                                    doc_task_id,
+                                    description=f"[red]! Storing document failed: {str(e)}",
+                                )
+                            finally:
+                                progress.update(doc_task_id, completed=float(1))
+                    except Exception:
+                        raise
+                    finally:
+                        # Update main progress
+                        progress.update(main_task, advance=1)
+            except Exception as e:
+                progress.update(
+                    main_task, description=f"[red]! Error crawling {url}: {str(e)}"
+                )
+            finally:
+                if successful_crawls == len(self.urls):
+                    description = "[green]✓ "
+                else:
+                    description = "[yellow]! "
+                description += (
+                    f"Successfully crawled {successful_crawls}/{len(self.urls)} URLs"
+                )
+                progress.update(
+                    main_task,
+                    completed=float(successful_crawls),
+                    description=description,
                 )
 
-                if result and hasattr(result, "extracted_contents"):
-                    # Process each extracted document
-                    docs = result.extracted_contents
-                    doc_tasks: List[TaskID] = []
+        return successful_crawls
 
-                    # Create tasks for processing documents
-                    for doc in docs:
-                        doc_data = (
-                            doc.model_dump()
-                            if hasattr(doc, "model_dump")
-                            else dict(doc)
-                        )
-                        doc_data["url"] = url
-
-                        # Create a task for each document
-                        task_id = progress.add_task(
-                            f"[cyan]Processing document: {doc_data.get('title', 'Untitled')[:30]}...",
-                            total=1,
-                        )
-                        doc_tasks.append(task_id)
-
-                        try:
-                            # Store the document with progress tracking
-                            success = await store_doc(
-                                doc_data, supabase_client, progress, task_id
-                            )
-                            if success:
-                                results.append(doc_data)
-                                successful_crawls += 1
-                                progress.update(
-                                    task_id,
-                                    completed=True,
-                                    description=f"[green]✓ Processed: {doc_data.get('title', 'Untitled')[:30]}...",
-                                )
-                            else:
-                                progress.update(
-                                    task_id,
-                                    description=f"[yellow]! Failed to store: {doc_data.get('title', 'Untitled')[:30]}...",
-                                )
-
-                        except Exception as e:
-                            progress.update(
-                                task_id, description=f"[red]! Error: {str(e)[:50]}..."
-                            )
-                            print_error(f"Error processing document: {str(e)}")
-                            print_exception()
-
-                    progress.update(
-                        url_task, completed=1, description=f"[green]✓ Crawled: {url}"
-                    )
-
-                else:
-                    progress.update(
-                        url_task, description=f"[yellow]! No content found at: {url}"
-                    )
-                    print_warning(f"No content found at: {url}")
-
-            except Exception as e:
-                progress.update(url_task, description=f"[red]! Error crawling: {url}")
-                print_error(f"Error crawling {url}: {str(e)}")
-                print_exception()
-
-            # Update main progress
-            progress.update(main_task, advance=1)
-
-        # Print summary
-        progress.update(main_task, completed=len(urls))
-
-        if successful_crawls > 0:
-            print_success(
-                f"Successfully processed {successful_crawls} documents from {len(urls)} URLs"
-            )
-        else:
-            print_warning("No content was extracted from the provided URLs")
-
-        return results
-
-
-async def store_doc(
-    doc_data: dict,
-    supabase: Client,
-    progress: Optional[Progress] = None,
-    task_id: Optional[TaskID] = None,
-) -> bool:
-    """Store a document in the database.
-
-    Args:
-        doc_data: Document data to store
-        supabase: Supabase client instance
-        progress: Optional Rich Progress instance for tracking
-        task_id: Optional task ID for progress tracking
-
-    Returns:
-        bool: True if storage was successful, False otherwise
-
-    """
-    try:
-        # Update progress if provided
-        if progress is not None and task_id is not None:
-            progress.update(
-                task_id, description=f"Processing: {doc_data.get('title', 'Untitled')}"
-            )
-
-        # Ensure we have content to process
-        if not doc_data.get("content"):
-            print_warning("No content found in document")
-            return False
-
-        # Generate embedding with progress feedback
-        if progress is not None and task_id is not None:
-            progress.update(task_id, description="Generating embeddings...")
-
+    def store_doc(self, doc_data: dict, progress: Progress, task_id: TaskID) -> bool:
+        document_title = doc_data.get("title", "Untitled")
+        content = doc_data.get("content", "")
+        url = doc_data.get("url", "unknown")
         try:
-            embeddings_response = openai_client.embeddings.create(
-                input=doc_data["content"], model=config.crawler.embedding_model
+            # Ensure we have content to process
+            if not content:
+                raise ValueError("No content found in document")
+
+            progress.update(task_id, description=f"Embedding: {document_title}")
+
+            resp = self._openai_client.embeddings.create(
+                input=content, model=self.embedding_model
             )
 
             # Safely extract the embedding
-            if (
-                hasattr(embeddings_response, "data")
-                and len(embeddings_response.data) > 0
-            ):
-                embedding = embeddings_response.data[0].embedding
+            if hasattr(resp, "data") and len(resp.data) > 0:
+                embedding = resp.data[0].embedding
             else:
-                print_error("Unexpected embeddings response format")
-                return False
+                raise ValueError("Unexpected embeddings response format")
 
-        except Exception as e:
-            print_error(f"Error generating embeddings: {str(e)}")
-            return False
-
-        # Store in Supabase
-        if progress is not None and task_id is not None:
             progress.update(task_id, description="Storing in database...")
 
-        try:
-            supabase.table("documents").insert(
+            # Store in Supabase
+            self.supabase_table.insert(
                 {
-                    "title": doc_data.get("title", "Untitled"),
-                    "content": doc_data["content"],
+                    "url": url,
+                    "title": document_title,
+                    "content": content,
                     "embedding": embedding,
                     "metadata": doc_data.get(
                         "metadata",
                         {
-                            "source": doc_data.get("url", "unknown"),
-                            "content_length": len(doc_data["content"]),
+                            "content_length": len(content),
                         },
                     ),
                 }
             ).execute()
 
-            if progress is not None and task_id is not None:
-                progress.update(task_id, description="Document stored successfully")
-
             return True
-
+        except ValueError as e:
+            raise Exception(f"Error while checking document content: {str(e)}")
         except Exception as e:
-            print_error(f"Database error: {str(e)}")
-            return False
-
-    except Exception as e:
-        print_error(f"Error in store_doc: {str(e)}")
-        print_exception()
-        return False
-    finally:
-        # Ensure progress is updated even if an error occurs
-        if progress is not None and task_id is not None:
-            progress.update(task_id, completed=True)
+            raise Exception(f"Error while storing document: {str(e)}")

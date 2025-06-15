@@ -1,207 +1,184 @@
-from typing import Any, Dict, List
-
 import requests
+from requests.exceptions import RequestException
 
-from code_reviewer_agent.config import config
-from code_reviewer_agent.models.reviewer_agent import CodeReviewResponse
-from code_reviewer_agent.utils.file_utils import get_file_languages
+from code_reviewer_agent.models.base_types import StringValidator
+from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
+from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
+from code_reviewer_agent.services.repository import (
+    CodeDiff,
+    Files,
+    Repository,
+    RepositoryService,
+    RequestId,
+)
 from code_reviewer_agent.utils.rich_utils import (
-    print_debug,
     print_error,
-    print_exception,
-    print_header,
     print_info,
     print_section,
     print_success,
-    print_warning,
 )
 
 
-def get_request_files(repository: str, mr_id: int) -> List[Dict[str, Any]]:
-    """Fetch the merge request files from GitLab.
+class GitLabToken(StringValidator):
+    pass
 
-    Args:
-        repository: The repository identifier as 'project_id'
-        mr_id: The merge request ID
 
-    Returns:
-        List of merge request files
+class GitLabApiUrl(StringValidator):
+    pass
 
-    Raises:
-        Exception: If the merge request files cannot be fetched
 
-    """
-    print_header("GitLab Merge Request management process")
+class GitLabReviewerService(RepositoryService):
+    def __init__(
+        self, repository: Repository, request_id: RequestId, config: ReviewerConfig
+    ) -> None:
+        RepositoryService.__init__(self, repository, request_id)
+        self._gitlab_token = config.gitlab_token
+        self._gitlab_api_url = config.gitlab_api_url
 
-    # ===== Fetch the merge request metadata =====
-    last_commit_sha_metadata: Dict[str, Any] = {}
-    try:
-        print_section("Connecting to GitLab repository", "🌐")
+    @property
+    def gitlab_token(self) -> GitLabToken:
+        return self._gitlab_token
 
-        print_info("Retrieving commits...")
-        headers = {"Private-Token": f"{config.reviewer.gitlab_token}"}
-        mr_metadata_url = f"{config.reviewer.gitlab_api_url}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}"
-        mr_metadata_response = requests.get(mr_metadata_url, headers=headers)
-        mr_metadata = mr_metadata_response.json()
-        if mr_metadata_response.status_code != 200:
-            print_error(
-                f"Failed to fetch merge request metadata: {mr_metadata_response.status_code} {mr_metadata_response.text}"
+    @property
+    def gitlab_api_url(self) -> GitLabApiUrl:
+        return self._gitlab_api_url
+
+    def request_files_analysis_from_api(self) -> None:
+        # ===== Fetch the merge request metadata =====
+        print_section("Fetching GitLab Merge Request files", "🌐")
+        headers = {"Authorization": f"token {self.gitlab_token}"}
+        try:
+            print_info("Retrieving commits...")
+            mr_metadata_url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}"
+            resp = requests.get(mr_metadata_url, headers=headers)
+            if resp.status_code != 200:
+                print_error(
+                    f"Failed to fetch merge request commits: {resp.status_code} {resp.text}"
+                )
+                raise Exception("Failed to fetch merge request commits")
+            mr_metadata = resp.json()
+            self.last_commit_sha = mr_metadata["diff_refs"]
+            print_success("Successfully retrieved merge request commits")
+
+            print_info("Retrieving changed files...")
+            url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}/changes"
+            resp = requests.get(url, headers=headers)
+            if resp.status_code != 200:
+                print_error(
+                    f"Failed to fetch merge request files: {resp.status_code} {resp.text}"
+                )
+                raise Exception("Failed to fetch merge request files")
+            files: Files = resp.json()
+            if not files or len(files) == 0:
+                raise ValueError("No files with changes found to review")
+            print_success("Successfully retrieved merge request files")
+            self.diffs = files
+        except RequestException as e:
+            raise Exception(
+                f"Network error while fetching merge request data: {str(e)}"
             )
-            raise Exception("Failed to fetch merge request metadata")
-        last_commit_sha_metadata = mr_metadata["diff_refs"]
-        print_success("Successfully retrieved merge request commits")
-
-        print_info("Retrieving changed files...")
-        url = f"{config.reviewer.gitlab_api_url}/projects/{repository.replace('/', '%2F')}/merge_requests/{mr_id}/changes"
-        mr_files = requests.get(url, headers=headers)
-        if mr_files.status_code != 200:
-            print_error(
-                f"Failed to fetch merge request files: {mr_files.status_code} {mr_files.text}"
+        except ValueError:
+            raise
+        except Exception as e:
+            raise Exception(
+                f"Unexpected error while fetching merge request data: {str(e)}"
             )
-            raise Exception("Failed to fetch merge request files")
-        print_success("Successfully retrieved merge request files")
 
-    except requests.exceptions.RequestException as e:
-        print_exception()
-        raise Exception(f"Network error while fetching merge request data: {str(e)}")
-    except Exception as e:
-        print_exception()
-        raise Exception(f"Unexpected error while fetching merge request data: {str(e)}")
-
-    # ===== Process the changed files =====
-    print_section("Processing retrieved files", "📄")
-    files: List[Dict[str, Any]] = mr_files.json()
-    filename_list: List[str] = [file["filename"] for file in files]
-    languages_dict = get_file_languages(filename_list)
-
-    # Process each file in the MR
-    print_info("Retrieving diffs data by file...")
-    files_diff: List[Dict[str, Any]] = []
-    for file in files:
-        filename = file["filename"]
-        patch = file.get("diff", "")
-        if not languages_dict.get(filename):
-            print_warning(f"No languages detected for file: {filename}")
-            continue
-
-        diff = {
-            "sha": last_commit_sha_metadata,
-            "filename": filename,
-            "languages": languages_dict.get(filename),
-            "patch": patch,
+    async def post_review_comments(
+        self, diff: CodeDiff, reviewer_output: CodeReviewResponse
+    ) -> None:
+        print_section(
+            f"Posting to GitLab repo {self.repository} MR #{self.request_id}", "📝"
+        )
+        headers = {
+            "Private-Token": self.gitlab_token,
+            "Content-Type": "application/json",
         }
-        files_diff.append(diff)
 
-        print_debug(
-            f"Retrieved diff data for file: {filename} ({len(patch)} characters)"
+        print_info("Building Markdown review comment...")
+        code_diff = reviewer_output.code_diff
+        if not code_diff.startswith("```diff"):
+            code_diff = "```diff\n" + code_diff + "\n```"
+        body = (
+            f"### {reviewer_output.title}\n"
+            f"**Line {reviewer_output.line_number}**\n\n"
+            f"{reviewer_output.comment}\n\n"
+            f"{code_diff}"
         )
 
-    # Check if there are no files to review
-    if not files_diff:
-        raise Exception("No files with changes found to review")
+        data = {
+            "body": body,
+            "position": {
+                "base_sha": diff["sha"]["base_sha"],
+                "start_sha": diff["sha"]["start_sha"],
+                "head_sha": diff["sha"]["head_sha"],
+                "position_type": "text",
+                "new_path": diff["filename"],
+                "new_line": reviewer_output.line_number,
+            },
+        }
 
-    print_success("Successfully retrieved diffs data by file")
-    return files_diff
-
-
-async def post_gitlab_review(
-    repository: str,
-    mr_id: int,
-    raw_diff: dict[str, Any],
-    reviewer_output: CodeReviewResponse,
-) -> None:
-    """Post one review comment to given GitLab repo and MR."""
-    print_section(f"Posting to GitLab repo {repository} MR #{mr_id}", "📝")
-    headers = {
-        "Private-Token": config.reviewer.gitlab_token,
-        "Content-Type": "application/json",
-    }
-
-    print_info("Preparing review comments...")
-    body = (
-        f"### {reviewer_output.title}\n"
-        f"**Line {reviewer_output.line_number}**\n\n"
-        f"{reviewer_output.comment}\n\n"
-    )
-
-    code_diff = reviewer_output.code_diff
-    # Format code diff if needed
-    if not code_diff.startswith("```diff"):
-        code_diff = "```diff\n" + code_diff + "\n```\n\n"
-
-    data = {
-        "body": body,
-        "position": {
-            "base_sha": raw_diff["sha"]["base_sha"],
-            "start_sha": raw_diff["sha"]["start_sha"],
-            "head_sha": raw_diff["sha"]["head_sha"],
-            "position_type": "text",
-            "new_path": raw_diff["filename"],
-            "new_line": reviewer_output.line_number,
-        },
-    }
-
-    print_info("Posting review...")
-    comment_response = requests.post(
-        f"{config.reviewer.gitlab_api_url}/projects/{repository}/merge_requests/{mr_id}/discussions",
-        headers=headers,
-        json=data,
-    )
-
-    if comment_response.status_code != 201:
-        raise Exception(
-            f"Failed to post comment on repo #{repository} MR #{mr_id}: {comment_response.text}"
+        print_info("Posting review comment...")
+        resp = requests.post(
+            f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}/discussions",
+            headers=headers,
+            json=data,
         )
+        if resp.status_code != 201:
+            raise Exception(
+                f"Failed to post comment on repo {self.repository} MR #{self.request_id}: {resp.text}"
+            )
+        print_success("Successfully posted review comment!")
 
-    print_success("Successfully posted review comment!")
+        self._assign_reviewed_label()
 
-
-async def update_gitlab_mr(
-    repository: str,
-    mr_id: int,
-    reviewed_label: str,
-) -> None:
-    """Set owner of GITLAB_TOKEN as reviewer (if not the same as the Assignee of the MR)
-    and 'reviewed_label' as label of given GitLab MR."""
-    headers = {
-        "Private-Token": config.reviewer.gitlab_token,
-        "Content-Type": "application/json",
-    }
-
-    print_info(f"Adding label '{reviewed_label}' to MR #{mr_id}...")
-    # TODO: Retrieve existing label before POST (it replace every existing labels)
-
-    label_url = f"{config.reviewer.gitlab_api_url}/projects/{repository}/merge_requests/{mr_id}?add_labels={reviewed_label}"
-    label_response = requests.put(label_url, headers=headers)
-    if label_response.status_code != 200:
-        raise Exception(
-            f"Failed to set label as '{reviewed_label}' to MR #{mr_id}: {label_response.status_code} - {label_response.text}"
+    def _assign_reviewed_label(self):
+        # ===== Update MR with reviewed_label =====
+        print_section(
+            f"Updating MR #{self.request_id} of GitLab repo {self.repository}", "🏷️"
         )
-    print_success(f"Successfully set label as '{reviewed_label}' to MR #{mr_id}")
+        headers = {
+            "Private-Token": self.gitlab_token,
+            "Content-Type": "application/json",
+        }
 
-    # ===== Set MR reviewer as the owner of the GITLAB_TOKEN =====
-    print_info(f"Retrieving GITLAB_TOKEN owner...")
-    user_resp = requests.get(f"{config.reviewer.gitlab_api_url}/user", headers=headers)
-    if user_resp.status_code != 200:
-        raise Exception(
-            f"Failed to get current user: {user_resp.status_code} - {user_resp.text}"
+        print_info(f"Adding label '{self.reviewed_label}'...")
+        # TODO: Retrieve existing label before POST (it replace every existing labels)
+
+        label_url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}?add_labels={self.reviewed_label}"
+        resp = requests.put(label_url, headers=headers)
+        if resp.status_code != 200:
+            raise Exception(f"Failed to set label to MR: {resp.text}")
+        print_success(f"Successfully set label on MR!")
+
+        # ===== Set MR reviewer as the owner of the GITLAB_TOKEN =====
+        print_info(f"Retrieving GITLAB_TOKEN owner...")
+        user_url = f"{self.gitlab_api_url}/user"
+        resp = requests.get(user_url, headers=headers)
+        if resp.status_code != 200:
+            raise Exception(
+                f"Failed to get authenticated user: {resp.status_code} - {resp.text}"
+            )
+
+        user_data = resp.json()
+        user_id = user_data.get("id")
+        user_name = user_data.get("name", f"User {user_id}")
+        if (
+            not user_id
+        ):  # Only check user_id as it is the only field required for the update request
+            raise Exception(
+                "Could not determine GITLAB_TOKEN owner. 'id' field missing in response."
+            )
+
+        print_info(f"Setting reviewer as {user_name} on MR...")
+        review_url = (
+            f"{self.gitlab_api_url}/projects/"
+            f"{self.repository}/merge_requests/{self.request_id}"
+            f"?reviewer_ids%5B%5D={user_id}"
         )
-
-    user_data = user_resp.json()
-    reviewer_id = user_data.get("id")
-    reviewer_name = user_data.get("name", f"User {reviewer_id}")
-    if not reviewer_id:
-        raise Exception("Could not determine reviewer ID from user data")
-
-    print_info(f"Setting reviewer as {reviewer_name} on MR #{mr_id}...")
-    reviewer_url = (
-        f"{config.reviewer.gitlab_api_url}/projects/"
-        f"{repository.replace('/', '%2F')}/merge_requests/{mr_id}"
-        f"?reviewer_ids%5B%5D={reviewer_id}"
-    )
-    reviewer_response = requests.put(reviewer_url, headers=headers)
-    if reviewer_response.status_code != 200:
-        raise Exception(
-            f"Failed to assign reviewer to MR #{mr_id}: {reviewer_response.status_code} - {reviewer_response.text}"
-        )
-    print_success(f"Successfully assigned {reviewer_name} as reviewer to MR #{mr_id}")
+        resp = requests.put(review_url, headers=headers)
+        if resp.status_code != 200:
+            raise Exception(
+                f"Failed to set reviewer on MR: {resp.status_code} - {resp.text}"
+            )
+        print_success(f"Successfully set reviewer on MR!")

@@ -1,26 +1,21 @@
-"""Code review service for the code review agent."""
-
-import argparse
-import asyncio
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from code_reviewer_agent.config.config import config
-from code_reviewer_agent.models.reviewer_agent import (
-    CodeReviewResponse,
-    get_code_review_agent,
+from pydantic_ai import Agent
+
+from code_reviewer_agent.config.config import Config
+from code_reviewer_agent.models.base_types import (
+    PositiveIntegerValidator,
+    StringValidator,
 )
+from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
+from code_reviewer_agent.models.reviewer_agent import ReviewerAgent
 from code_reviewer_agent.prompts.cr_agent import USER_PROMPT
-from code_reviewer_agent.services.github import (
-    get_request_files as get_github_request_files,
-)
-from code_reviewer_agent.services.github import post_github_review, update_github_pr
-from code_reviewer_agent.services.gitlab import (
-    get_request_files as get_gitlab_request_files,
-)
-from code_reviewer_agent.services.gitlab import post_gitlab_review, update_gitlab_mr
-from code_reviewer_agent.utils.langfuse import configure_langfuse
+from code_reviewer_agent.services.base_service import BaseService
+from code_reviewer_agent.services.github import GitHubReviewerService
+from code_reviewer_agent.services.gitlab import GitLabReviewerService
+from code_reviewer_agent.services.repository import CodeDiff, RepositoryService
 from code_reviewer_agent.utils.rich_utils import (
     console,
     print_debug,
@@ -34,288 +29,319 @@ from code_reviewer_agent.utils.rich_utils import (
     print_warning,
 )
 
-# Configure Langfuse for agent observability
-tracer = configure_langfuse()
+
+class Platform(StringValidator):
+    pass
 
 
-def parse_arguments() -> argparse.Namespace:
-    """Parse and validate command line arguments.
-
-    Returns:
-        Parsed command line arguments
-
-    """
-    print_section("Parsing Command Line Arguments", "🔧")
-
-    # Create the argument parser with rich help formatting
-    parser = argparse.ArgumentParser(
-        description="[bold]Code Review Agent[/bold] - Automated code review tool for GitHub and GitLab",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "[bold]Examples:[/bold]\n"
-            "  python -m code_reviewer_agent --platform github --repository owner/repo --pr-id 123\n"
-            "  python -m code_reviewer_agent --platform gitlab --repository 12345 --pr-id 42 --instructions-path ./docs"
-        ),
-    )
-
-    # Platform argument
-    parser.add_argument(
-        "--platform",
-        type=str,
-        choices=["github", "gitlab"],
-        help="Version control platform (overrides PLATFORM env var)",
-        metavar="PLATFORM",
-    )
-
-    # Repository argument
-    parser.add_argument(
-        "--repository",
-        type=str,
-        help=(
-            "Repository identifier. For GitHub: 'owner/repo' format. "
-            "For GitLab: project ID (overrides REPOSITORY env var)"
-        ),
-        metavar="REPO",
-    )
-
-    # PR/MR ID argument
-    parser.add_argument(
-        "--id",
-        "--pr-id",
-        "--mr-id",
-        type=int,
-        help="Pull request or merge request ID (overrides PR_ID env var)",
-        metavar="ID",
-    )
-
-    # Instructions path argument
-    parser.add_argument(
-        "--instructions-path",
-        type=str,
-        help=(
-            "Path to the local directory containing your custom instructions "
-            "for the code review (overrides LOCAL_FILE_DIR env var)"
-        ),
-        metavar="PATH",
-    )
-
-    # Parse arguments
-    try:
-        args = parser.parse_args()
-        print_success("Command line arguments parsed successfully")
-        return args
-
-    except Exception as e:
-        print_error(f"Error parsing command line arguments: {str(e)}")
-        parser.print_help()
-        print_exception()
-        sys.exit(1)
+class Repository(StringValidator):
+    pass
 
 
-async def main(platform: str, repository: str, id: int, instructions_path: str) -> None:
-    """Main entry point for the code review agent."""
-    console.clear()
-    print_header("Starting Code Reviewer Agent process")
+class RequestId(PositiveIntegerValidator):
+    pass
 
-    if config.logging.debug:
-        config.print_config()
 
-    platform: str = platform or config.reviewer.platform
-    repository: str = repository or config.reviewer.repository
-    instructions_path: str = (
-        instructions_path or config.reviewer.instruction_dir_path
-    )
-    request_id: int = id
-    reviewed_label: str = "ReviewedByAI"
+class InstructionsPath(StringValidator):
+    pass
 
-    if config.logging.debug:
-        print_section("Final Configuration retrieved:", "⚙️")
-        print_info(f"Platform: {platform.upper()}")
-        print_info(f"Repository: {repository}")
-        print_info(f"Instructions path: {instructions_path}")
-        print_info(f"Request ID: {request_id}")
 
-    try:
-        # Validate inputs
-        if platform not in ("github", "gitlab"):
+class Token(StringValidator):
+    pass
+
+
+class Url(StringValidator):
+    pass
+
+
+class CodeReviewService(BaseService):
+    _reviewer_agent = None
+    _repository_service = None
+    _github_token = Token()
+    _gitlab_token = Token()
+    _gitlab_url = Url()
+    _platform = Platform()
+    _repository = Repository()
+    _instructions_path = InstructionsPath()
+    _request_id = RequestId()
+
+    def __init__(
+        self,
+        platform: Platform,
+        repository: Repository,
+        request_id: RequestId,
+        instructions_path: InstructionsPath,
+    ) -> None:
+        super().__init__(Config())
+        self._reviewer_agent = ReviewerAgent(self.config)
+
+        reviewer_config = self.config.schema.reviewer
+        self._github_token = reviewer_config.github_token
+        self._gitlab_token = reviewer_config.gitlab_token
+        self._gitlab_url = reviewer_config.gitlab_api_url
+        self._platform = platform or reviewer_config.platform
+        self._repository = repository or reviewer_config.repository
+        self._instructions_path = (
+            instructions_path or reviewer_config.instruction_dir_path
+        )
+        self._request_id = request_id
+
+        self.repository_service = self.platform
+
+    @property
+    def agent(self) -> Agent[None, str]:
+        return self._reviewer_agent.agent
+
+    @property
+    def debug(self) -> bool:
+        return self._reviewer_agent.debug
+
+    @property
+    def github_token(self) -> Token:
+        return self._github_token
+
+    @github_token.setter
+    def github_token(self, value: str) -> None:
+        Token.__set__(self._github_token, value)
+
+    @property
+    def gitlab_token(self) -> Token:
+        return self._gitlab_token
+
+    @gitlab_token.setter
+    def gitlab_token(self, value: str) -> None:
+        Token.__set__(self._gitlab_token, value)
+
+    @property
+    def gitlab_url(self) -> Url:
+        return self._gitlab_url
+
+    @gitlab_url.setter
+    def gitlab_url(self, value: str) -> None:
+        Url.__set__(self._gitlab_url, value)
+
+    @property
+    def platform(self) -> Platform:
+        return self._platform
+
+    @platform.setter
+    def platform(self, value: str):
+        formated_value = value.lower().strip()
+        if formated_value not in ("github", "gitlab"):
             raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'.")
 
-        if platform == "github" and not config.reviewer.github_token:
+        if formated_value == "github" and not self.github_token:
             raise ValueError(
                 "github_token config variable is required when platform is 'github'."
             )
 
-        if platform == "gitlab" and not config.reviewer.gitlab_token:
+        if formated_value == "gitlab" and not self.gitlab_token:
             raise ValueError(
                 "gitlab_token config variable is required when platform is 'gitlab'."
             )
+        Platform.__set__(self._platform, formated_value)
 
-        if not repository:
-            raise ValueError(
-                "Repository not specified. Use --repository argument or set repository config variable."
-            )
+    @property
+    def repository(self) -> Repository:
+        return self._repository
 
-        if not request_id:
-            raise ValueError(
-                "Request ID not specified. Use --id, --pr-id or --mr-id argument."
-            )
-    except ValueError as e:
-        print_error(f"Error validating inputs: {str(e)}")
-        print_exception()
-        sys.exit(1)
+    @repository.setter
+    def repository(self, value: str) -> None:
+        Repository.__set__(self._repository, value)
 
-    # Fetch request files
-    print_section("Fetching PR/MR Information", "🌐")
-    files_diff: List[Dict[str, Any]] = []
-    try:
+    @property
+    def instructions_path(self) -> InstructionsPath:
+        return self._instructions_path
+
+    @instructions_path.setter
+    def instructions_path(self, value: str) -> None:
+        InstructionsPath.__set__(self._instructions_path, value)
+
+    @property
+    def request_id(self) -> RequestId:
+        return self._request_id
+
+    @request_id.setter
+    def request_id(self, value: int) -> None:
+        RequestId.__set__(self._request_id, value)
+
+    @property
+    def repository_service(self) -> RepositoryService:
+        return self._repository_service
+
+    @repository_service.setter
+    def repository_service(self, platform: Platform):
         if platform == "github":
-            files_diff = get_github_request_files(repository, request_id)
+            self._repository_service = GitHubReviewerService(
+                self.repository, self.request_id, self._config.schema.reviewer
+            )
+        elif platform == "gitlab":
+            self._repository_service = GitLabReviewerService(
+                self.repository, self.request_id, self._config.schema.reviewer
+            )
         else:
-            files_diff = get_gitlab_request_files(repository, request_id)
-    except Exception as e:
-        print_error(f"Error fetching PR/MR information: {str(e)}")
-        print_exception()
-        sys.exit(1)
+            raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'.")
 
-    # ========== Reviewer Agent: loop on each file diff ==========
-    print_section("Starting Code Review process", "🤖")
-    print_debug(f"Reviewing {len(files_diff)} file(s) with changes")
+    async def _file_code_review_without_langfuse(
+        self, diff: CodeDiff, user_input: str
+    ) -> None:
+        start_time = time.perf_counter()
+        reviewer_output: Optional[CodeReviewResponse] = None
 
-    reviewer_agent = get_code_review_agent()
-    try:
-        with tracer.start_as_current_span("CR-Agent-Main-Trace") as main_span:
-            main_span.set_attribute("langfuse.user.id", f"cr-request-{request_id}")
+        try:
+            reviewer_response = await self.agent.run(
+                user_input,
+                output_type=CodeReviewResponse,
+            )
+            reviewer_output = reviewer_response.output
+
+            if not reviewer_output or not hasattr(reviewer_output, "comment"):
+                raise ValueError("The AI did not return a valid code review response!")
+        except ValueError:
+            raise
+        except Exception as agent_error:
+            raise Exception(f"Agent run failed: {str(agent_error)}")
+
+        duration = time.perf_counter() - start_time
+        print_debug(f"Code review completed in {duration:.2f} seconds")
+        print_success(f"Code review response successfully retrieved from Agent")
+
+        print_debug(reviewer_output)
+
+        # Post review comments to the PR/MR
+        try:
+            self.repository_service.post_review_comments(diff, reviewer_output)
+            return reviewer_output
+        except Exception as post_error:
+            raise Exception(f"Failed to post review: {str(post_error)}")
+
+    async def _file_code_review(
+        self, diff: CodeDiff, filename: str, languages: List[str], user_input: str
+    ) -> None:
+        with self.langfuse.tracer.start_as_current_span(
+            "CR-Agent-Review"
+        ) as file_review_span:
+            file_review_span.set_attribute(
+                "langfuse.user.id", f"cr-request-{self.request_id}"
+            )
+            file_review_span.set_attribute(
+                "langfuse.session.id", f"cr-{self.platform}-{self.repository}"
+            )
+            file_review_span.set_attribute("filename", filename)
+            file_review_span.set_attribute("languages", languages)
+
+            reviewer_output = await self._file_code_review_without_langfuse(
+                diff, user_input
+            )
+
+            file_review_span.set_attribute("input.value", user_input)
+            file_review_span.set_attribute("output.value", reviewer_output)
+
+    async def _review_files_without_langfuse(self) -> int:
+        files_reviewed = 0
+        for diff in self.repository_service.diffs:
+            try:
+                filename = diff.get("filename", "unknown")
+                languages = ", ".join(diff.get("languages", ["unknown"]))
+                patch = diff.get("patch", "")
+
+                if not patch:
+                    print_warning(f"No changes found for file: {filename}")
+                    continue
+
+                if self.debug:
+                    print_info(f"Reviewing file: {filename}")
+                    print_info(f"  - Languages: {languages}")
+                    print_diff(patch)
+
+                # Prepare the User input for the code review
+                user_input = USER_PROMPT.format(
+                    diff=patch,
+                )
+                print_debug(f"User input length: {len(user_input)}")
+
+                print_info(f"Starting code review for file: {filename}")
+
+                if self.langfuse.enabled:
+                    await self._file_code_review(diff, filename, languages, user_input)
+                else:
+                    await self._file_code_review_without_langfuse(diff, user_input)
+
+                files_reviewed += 1
+
+            except Exception as file_error:
+                print_warning(
+                    f"Skipping review of file {filename} due to error: {str(file_error)}"
+                )
+                continue  # Continue with the next file even if one fails
+
+        print_success(
+            f"{files_reviewed}/{len(self.repository_service.diffs)} reviews done and posted successfully!"
+        )
+
+        if files_reviewed > 0:
+            await self.repository_service._assign_reviewed_label()
+        else:
+            print_warning(
+                "No files reviewed, please check the logs for more information. "
+                "Skipping request updates."
+            )
+
+        return files_reviewed
+
+    async def _review_files(self) -> None:
+        with self.langfuse.tracer.start_as_current_span(
+            "CR-Agent-Main-Trace"
+        ) as main_span:
+            main_span.set_attribute("langfuse.user.id", f"cr-request-{self.request_id}")
             main_span.set_attribute(
-                "langfuse.session.id", f"cr-{platform}-{repository}"
+                "langfuse.session.id", f"cr-{self.platform}-{self.repository}"
             )
 
-            files_reviewed = 0
-            for diff in files_diff:
-                try:
-                    filename = diff.get("filename", "unknown")
-                    languages = ", ".join(diff.get("languages", ["unknown"]))
-                    patch = diff.get("patch", "")
+            files_reviewed = await self._review_files_without_langfuse()
 
-                    if not patch:
-                        print_warning(f"No changes found for file: {filename}")
-                        continue
-
-                    if config.logging.debug:
-                        print_info(f"Reviewing file: {filename}")
-                        print_info(f"  - Languages: {languages}")
-                        print_diff(patch)
-
-                    # Prepare the User input for the code review
-                    user_input = USER_PROMPT.format(
-                        diff=patch,
-                    )
-                    print_debug(f"User input length: {len(user_input)}")
-
-                    # Start a new tracing for this file review
-                    print_info(f"Starting code review for file: {filename}")
-                    with tracer.start_as_current_span(
-                        "CR-Agent-Review"
-                    ) as file_review_span:
-                        file_review_span.set_attribute(
-                            "langfuse.user.id", f"cr-request-{request_id}"
-                        )
-                        file_review_span.set_attribute(
-                            "langfuse.session.id", f"cr-{platform}-{repository}"
-                        )
-                        file_review_span.set_attribute("filename", filename)
-                        file_review_span.set_attribute("languages", languages)
-
-                        # Run the code review AI Agent
-                        start_time = time.perf_counter()
-                        reviewer_output: Optional[CodeReviewResponse] = None
-
-                        try:
-                            reviewer_response = await reviewer_agent.run(
-                                user_input,
-                                output_type=CodeReviewResponse,
-                            )
-                            reviewer_output = reviewer_response.output
-
-                            if not reviewer_output or not hasattr(
-                                reviewer_output, "comment"
-                            ):
-                                raise ValueError(
-                                    "The AI did not return a valid code review response!"
-                                )
-
-                        except ValueError as e:
-                            # Re-raise validation errors as-is
-                            raise
-                        except Exception as agent_error:
-                            print_error(f"Agent run failed: {str(agent_error)}")
-                            raise
-
-                        duration = time.perf_counter() - start_time
-                        print_debug(f"Code review completed in {duration:.2f} seconds")
-                        print_success(
-                            f"Code review response successfully retrieved from Agent"
-                        )
-
-                        if config.logging.debug:
-                            reviewer_output.print_info()
-
-                        # Set langfuse span attributes
-                        file_review_span.set_attribute("input.value", user_input)
-                        file_review_span.set_attribute("output.value", reviewer_output)
-
-                        # Post review comments to the PR/MR
-                        try:
-                            if platform == "github":
-                                await post_github_review(
-                                    repository,
-                                    request_id,
-                                    diff,
-                                    reviewer_output,
-                                )
-                            else:
-                                await post_gitlab_review(
-                                    repository,
-                                    request_id,
-                                    diff,
-                                    reviewer_output,
-                                )
-                            print_success("Review posted successfully")
-
-                        except Exception as post_error:
-                            print_error(f"Failed to post review: {str(post_error)}")
-                            print_exception()
-                            raise
-
-                        files_reviewed += 1
-
-                except Exception as file_error:
-                    print_warning(
-                        f"Skipping review of file {filename} due to error: {str(file_error)}"
-                    )
-                    print_exception()
-                    continue  # Continue with the next file even if one fails
-
-            print_success(
-                f"{files_reviewed}/{len(files_diff)} reviews done and posted successfully!"
+            main_span.set_attribute("input.value", str(self.repository_service.diffs))
+            main_span.set_attribute(
+                "output.value",
+                f"Reviewed {files_reviewed}/{len(self.repository_service.diffs)} files successfully",
             )
 
-            # Add label and assign reviewer after processing all files
-            print_section("Finalizing Review by updating PR/MR", "🔄")
-            if platform == "github":
-                await update_github_pr(repository, request_id, reviewed_label)
+    async def main(self) -> None:
+        console.clear()
+        print_header("Starting Code Reviewer Agent process")
+
+        if self.debug:
+            print_section("[DEBUG] Final Configuration retrieved:", "⚙️")
+            print_info(f"Platform: {self.platform.upper()}")
+            print_info(f"Repository: {self.repository}")
+            print_info(f"Instructions path: {self.instructions_path}")
+            print_info(f"Request ID: {self.request_id}")
+
+        try:
+            self.repository_service.request_files_analysis_from_api()
+        except Exception as e:
+            print_error(
+                f"Error fetching {'PR' if self.platform == 'github' else 'MR'} files diffs: {str(e)}"
+            )
+            print_exception()
+            sys.exit(1)
+
+        # ========== Reviewer Agent: loop on each file diff ==========
+        print_section("Starting Code Review process", "🤖")
+        print_debug(
+            f"Reviewing {len(self.repository_service.diffs)} file(s) with changes"
+        )
+
+        try:
+            if self.langfuse.enabled:
+                await self._review_files()
             else:
-                await update_gitlab_mr(repository, request_id, reviewed_label)
-            print_success("Reviewer and label updated successfully")
+                await self._review_files_without_langfuse()
+        except Exception as e:
+            print_error(f"An unexpected error occurred: {str(e)}")
+            print_exception()
+            sys.exit(1)
 
-    except Exception as e:
-        print_error(f"An unexpected error occurred: {str(e)}")
-        print_exception()
-        sys.exit(1)
-
-    print_section("Review Complete", "✅")
-    print_success("Code review process finished successfully")
-    sys.exit(0)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        print_section("Review Complete", "✅")
+        print_success("Code review process finished successfully")
+        sys.exit(0)
