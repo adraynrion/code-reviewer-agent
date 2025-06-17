@@ -62,6 +62,12 @@ code-reviewer-agent/
 - Git
 - GitHub/GitLab account with appropriate permissions
 - API keys for required services (see Configuration)
+- Supabase account with appropriate permissions
+
+## 🏗️ Supabase "documents" table
+
+To work with the crawler agent, you need to create a "documents" table and a "match_documents" function in your Supabase database.
+**All the necessary queries are stored under supabase/ folder.**
 
 ## 🚀 Installation
 
