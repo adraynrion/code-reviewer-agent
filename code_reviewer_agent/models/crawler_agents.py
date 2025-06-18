@@ -1,22 +1,10 @@
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.services.crawler import Urls
 from code_reviewer_agent.services.crawler_read import CrawlerReader
 from code_reviewer_agent.services.crawler_write import CrawlerWritter
 from supabase import Client as SupabaseClient
-
-
-class ConfigArgs(Dict[str, Any]):
-    pass
-
-
-class CrawledDocument(Dict[str, Any]):
-    pass
-
-
-class CrawledDocuments(List[CrawledDocument]):
-    pass
 
 
 class CrawlerAgents:

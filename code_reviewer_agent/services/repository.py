@@ -1,9 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, Tuple
 
 from code_reviewer_agent.models.base_types import (
-    PositiveIntegerValidator,
-    StringValidator,
+    CommitSha,
+    Files,
+    FilesDiff,
+    Label,
+    Languages,
+    Repository,
+    RequestId,
 )
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
 from code_reviewer_agent.utils.file_utils import LanguageUtils
@@ -14,38 +19,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_success,
     print_warning,
 )
-
-
-class Repository(StringValidator):
-    pass
-
-
-class RequestId(PositiveIntegerValidator):
-    pass
-
-
-class CommitSha(StringValidator):
-    pass
-
-
-class Files(Tuple[Dict[str, Any]]):
-    pass
-
-
-class FilesDiff(List[Dict[str, Any]]):
-    pass
-
-
-class CodeDiff(Dict[str, Any]):
-    pass
-
-
-class Languages(Dict[str, Set[str]]):
-    pass
-
-
-class Label(StringValidator):
-    pass
 
 
 class RepositoryService(ABC):

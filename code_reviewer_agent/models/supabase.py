@@ -1,16 +1,6 @@
 from code_reviewer_agent.config.config import Config
-from code_reviewer_agent.models.base_types import StringValidator
+from code_reviewer_agent.models.base_types import SupabaseKey, SupabaseUrl
 from supabase import Client, create_client
-
-
-# Url Type validator
-class SupabaseUrl(StringValidator):
-    pass
-
-
-# Key Type validator
-class SupabaseKey(StringValidator):
-    pass
 
 
 class SupabaseModel:

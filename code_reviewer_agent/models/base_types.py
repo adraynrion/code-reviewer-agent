@@ -1,78 +1,194 @@
-from weakref import WeakKeyDictionary
+from typing import Any, Dict, List, Set, Tuple
 
 
-class StringValidator:
-    def __init__(self) -> None:
-        self._values = WeakKeyDictionary()
-
-    def __get__(self, instance, owner):
-        return self._values.get(instance)
-
-    def __set__(self, instance, value: str) -> None:
+class StringValidator(str):
+    def __new__(cls, value: str) -> "StringValidator":
         if not isinstance(value, str):
             raise ValueError("Value must be a string")
         if not value.strip():
             raise ValueError("Value cannot be empty")
-        self._values[instance] = value.strip()
-
-    def __delete__(self, instance):
-        if instance in self._values:
-            del self._values[instance]
-        else:
-            raise AttributeError("String value not set")
+        return super().__new__(cls)
 
 
-class IntegerValidator:
-    def __init__(self) -> None:
-        self._values = WeakKeyDictionary()
-
-    def __get__(self, instance, owner) -> int:
-        return self._values.get(instance)
-
-    def __set__(self, instance, value: int) -> None:
+class IntegerValidator(int):
+    def __new__(cls, value: int) -> "IntegerValidator":
         if not isinstance(value, int):
             raise ValueError("Value must be an integer")
-        self._values[instance] = value
-
-    def __delete__(self, instance):
-        if instance in self._values:
-            del self._values[instance]
-        else:
-            raise AttributeError("Integer value not set")
+        return super().__new__(cls)
 
 
 class PositiveIntegerValidator(IntegerValidator):
-    def __set__(self, instance, value: int) -> None:
+    def __new__(cls, value: int) -> "PositiveIntegerValidator":
         if not isinstance(value, int):
             raise ValueError("Value must be an integer")
         if value < 0:
             raise ValueError("Value must be positive")
-        self._values[instance] = value
+        return super().__new__(cls)
 
 
-class FloatValidator:
-    def __init__(self) -> None:
-        self._values = WeakKeyDictionary()
-
-    def __get__(self, instance, owner) -> float:
-        return self._values.get(instance)
-
-    def __set__(self, instance, value: float) -> None:
+class FloatValidator(float):
+    def __new__(cls, value: float) -> "FloatValidator":
         if not isinstance(value, float):
             raise ValueError("Value must be a float")
-        self._values[instance] = value
-
-    def __delete__(self, instance):
-        if instance in self._values:
-            del self._values[instance]
-        else:
-            raise AttributeError("Float value not set")
+        return super().__new__(cls)
 
 
 class PositiveFloatValidator(FloatValidator):
-    def __set__(self, instance, value: float) -> None:
+    def __new__(cls, value: float) -> "PositiveFloatValidator":
         if not isinstance(value, float):
             raise ValueError("Value must be a float")
         if value < 0:
             raise ValueError("Value must be positive")
-        self._values[instance] = value
+        return super().__new__(cls)
+
+
+########## StringValidator ##########
+
+
+class ApiKey(StringValidator):
+    pass
+
+
+class BaseUrl(StringValidator):
+    pass
+
+
+class CommitSha(StringValidator):
+    pass
+
+
+class EmbeddingModel(StringValidator):
+    pass
+
+
+class ExtractionType(StringValidator):
+    pass
+
+
+class GitHubToken(StringValidator):
+    pass
+
+
+class GitLabApiUrl(StringValidator):
+    pass
+
+
+class GitLabToken(StringValidator):
+    pass
+
+
+class InstructionsPath(StringValidator):
+    pass
+
+
+class Label(StringValidator):
+    pass
+
+
+class LLM(StringValidator):
+    pass
+
+
+class ModelProvider(StringValidator):
+    pass
+
+
+class Platform(StringValidator):
+    pass
+
+
+class Repository(StringValidator):
+    pass
+
+
+class SupabaseKey(StringValidator):
+    pass
+
+
+class SupabaseUrl(StringValidator):
+    pass
+
+
+class Token(StringValidator):
+    pass
+
+
+class Url(StringValidator):
+    pass
+
+
+########## PositiveIntegerValidator ##########
+
+
+class ChunkTokenThreshold(PositiveIntegerValidator):
+    pass
+
+
+class ConcurrentTasks(PositiveIntegerValidator):
+    pass
+
+
+class MaxDepth(PositiveIntegerValidator):
+    pass
+
+
+class MaxPages(PositiveIntegerValidator):
+    pass
+
+
+class MaxTokens(PositiveIntegerValidator):
+    pass
+
+
+class OverlapRate(PositiveFloatValidator):
+    pass
+
+
+class RequestId(PositiveIntegerValidator):
+    pass
+
+
+class Temperature(PositiveFloatValidator):
+    pass
+
+
+########## Others ##########
+
+
+class Urls(List[str]):
+    def __set__(self, instance, value: List[str]) -> None:
+        if not value or len(value) == 0:
+            raise ValueError("At least one URL is required")
+        super().__set__(instance, value)
+
+
+class Headless(bool):
+    pass
+
+
+class Files(Tuple[Dict[str, Any]]):
+    pass
+
+
+class FilesDiff(List[Dict[str, Any]]):
+    pass
+
+
+class CodeDiff(Dict[str, Any]):
+    pass
+
+
+class Languages(Dict[str, Set[str]]):
+    pass
+
+
+class ConfigArgs(Dict[str, Any]):
+    pass
+
+
+class CrawledDocument(Dict[str, Any]):
+    pass
+
+
+class CrawledDocuments(List[CrawledDocument]):
+    pass

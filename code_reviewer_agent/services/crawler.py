@@ -5,8 +5,19 @@ from rich.table import Table
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import (
+    ApiKey,
+    ChunkTokenThreshold,
+    ConcurrentTasks,
+    EmbeddingModel,
+    ExtractionType,
+    Headless,
+    MaxDepth,
+    MaxPages,
+    MaxTokens,
+    OverlapRate,
     PositiveFloatValidator,
-    PositiveIntegerValidator,
+    Temperature,
+    Urls,
 )
 from code_reviewer_agent.models.crawler_agents import CrawlerAgents
 from code_reviewer_agent.services.base_service import BaseService
@@ -17,57 +28,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_header,
     print_success,
 )
-
-
-class ApiKey(StringValidator):
-    pass
-
-
-class EmbeddingModel(StringValidator):
-    pass
-
-
-class Urls(List[str]):
-    def __set__(self, instance, value: List[str]) -> None:
-        if not value or len(value) == 0:
-            raise ValueError("At least one URL is required")
-        super().__set__(instance, value)
-
-
-class MaxPages(PositiveIntegerValidator):
-    pass
-
-
-class MaxDepth(PositiveIntegerValidator):
-    pass
-
-
-class ConcurrentTasks(PositiveIntegerValidator):
-    pass
-
-
-class ExtractionType(StringValidator):
-    pass
-
-
-class ChunkTokenThreshold(PositiveIntegerValidator):
-    pass
-
-
-class OverlapRate(PositiveFloatValidator):
-    pass
-
-
-class Temperature(PositiveFloatValidator):
-    pass
-
-
-class MaxTokens(PositiveIntegerValidator):
-    pass
-
-
-class Headless(bool):
-    pass
 
 
 class Locale(StringValidator):

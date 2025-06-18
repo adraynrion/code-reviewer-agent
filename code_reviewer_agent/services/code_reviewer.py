@@ -6,8 +6,12 @@ from pydantic_ai import Agent
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import (
-    PositiveIntegerValidator,
-    StringValidator,
+    InstructionsPath,
+    Platform,
+    Repository,
+    RequestId,
+    Token,
+    Url,
 )
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
 from code_reviewer_agent.models.reviewer_agent import ReviewerAgent
@@ -28,30 +32,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_success,
     print_warning,
 )
-
-
-class Platform(StringValidator):
-    pass
-
-
-class Repository(StringValidator):
-    pass
-
-
-class RequestId(PositiveIntegerValidator):
-    pass
-
-
-class InstructionsPath(StringValidator):
-    pass
-
-
-class Token(StringValidator):
-    pass
-
-
-class Url(StringValidator):
-    pass
 
 
 class CodeReviewService(BaseService):

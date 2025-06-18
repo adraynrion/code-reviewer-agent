@@ -1,7 +1,7 @@
 import requests
 from requests.exceptions import RequestException
 
-from code_reviewer_agent.models.base_types import StringValidator
+from code_reviewer_agent.models.base_types import GitHubToken
 from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
 from code_reviewer_agent.services.repository import (
@@ -17,10 +17,6 @@ from code_reviewer_agent.utils.rich_utils import (
     print_section,
     print_success,
 )
-
-
-class GitHubToken(StringValidator):
-    pass
 
 
 class GitHubReviewerService(RepositoryService):

@@ -6,25 +6,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from code_reviewer_agent.config.config import Config
-from code_reviewer_agent.models.base_types import StringValidator
+from code_reviewer_agent.models.base_types import LLM, ApiKey, BaseUrl, ModelProvider
 from code_reviewer_agent.models.pydantic_config_models import LLMConfig
 from code_reviewer_agent.models.supabase import SupabaseModel
-
-
-class ApiKey(StringValidator):
-    pass
-
-
-class BaseUrl(StringValidator):
-    pass
-
-
-class ModelProvider(StringValidator):
-    pass
-
-
-class LLM(StringValidator):
-    pass
 
 
 class LLMDict:
