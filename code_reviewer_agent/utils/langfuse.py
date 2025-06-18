@@ -2,10 +2,11 @@
 
 import base64
 import os
+from typing import Any
 
 import logfire
 from langfuse import Langfuse
-from opentelemetry.trace import Tracer
+from langfuse.client import StatefulTraceClient
 
 from code_reviewer_agent.models.base_types import StringValidator
 from code_reviewer_agent.models.pydantic_config_models import LangfuseConfig
@@ -25,25 +26,19 @@ class LangfuseModel:
 
     _instance = None
 
-    _tracer = None
-    _public_key = LangfuseKey()
-    _secret_key = LangfuseKey()
-    _host = LangfuseHost()
-    _enabled = False
-
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "LangfuseModel":
         if not cls._instance:
             cls._instance = super(LangfuseModel, cls).__new__(cls, *args, **kwargs)
         return cls._instance
 
     def __init__(self, config: LangfuseConfig) -> None:
-        self._public_key = config.public_key
-        self._secret_key = config.secret_key
-        self._host = config.host
+        self._public_key = LangfuseKey(config.public_key)
+        self._secret_key = LangfuseKey(config.secret_key)
+        self._host = LangfuseHost(config.host)
         self._enabled = config.enabled
 
     @property
-    def tracer(self) -> Tracer:
+    def tracer(self) -> StatefulTraceClient:
         if not self._tracer:
             raise ValueError(
                 "Langfuse is not initialized. Please correctly initialize it first."
@@ -67,7 +62,7 @@ class LangfuseModel:
         return self._enabled
 
     @enabled.setter
-    def enabled(self, value: bool):
+    def enabled(self, value: bool) -> None:
         if not value:
             print_warning("Langfuse is now disabled.")
             self._tracer = None

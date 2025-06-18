@@ -1,11 +1,10 @@
 import requests
 from requests.exceptions import RequestException
 
-from code_reviewer_agent.models.base_types import GitLabApiUrl, GitLabToken
+from code_reviewer_agent.models.base_types import CodeDiff, GitLabApiUrl, GitLabToken
 from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
 from code_reviewer_agent.services.repository import (
-    CodeDiff,
     Files,
     Repository,
     RepositoryService,
@@ -24,8 +23,8 @@ class GitLabReviewerService(RepositoryService):
         self, repository: Repository, request_id: RequestId, config: ReviewerConfig
     ) -> None:
         RepositoryService.__init__(self, repository, request_id)
-        self._gitlab_token = config.gitlab_token
-        self._gitlab_api_url = config.gitlab_api_url
+        self._gitlab_token = GitLabToken(config.gitlab_token)
+        self._gitlab_api_url = GitLabApiUrl(config.gitlab_api_url)
 
     @property
     def gitlab_token(self) -> GitLabToken:
@@ -122,9 +121,9 @@ class GitLabReviewerService(RepositoryService):
             )
         print_success("Successfully posted review comment!")
 
-        self._assign_reviewed_label()
+        await self._assign_reviewed_label()
 
-    def _assign_reviewed_label(self):
+    async def _assign_reviewed_label(self) -> None:
         # ===== Update MR with reviewed_label =====
         print_section(
             f"Updating MR #{self.request_id} of GitLab repo {self.repository}", "🏷️"

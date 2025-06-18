@@ -1,3 +1,5 @@
+from typing import Any
+
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import SupabaseKey, SupabaseUrl
 from supabase import Client, create_client
@@ -8,7 +10,7 @@ class SupabaseModel:
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "SupabaseModel":
         if not cls._instance:
             cls._instance = super(SupabaseModel, cls).__new__(cls, *args, **kwargs)
         return cls._instance

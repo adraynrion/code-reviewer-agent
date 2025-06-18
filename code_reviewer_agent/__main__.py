@@ -70,7 +70,13 @@ def review(
 
 
 @cli.command()
-@click.argument("urls", nargs=-1, required=True)
+@click.argument(
+    "urls",
+    required=True,
+    type=str,
+    nargs=-1,
+    help="URLs to crawl (can be used multiple times)",
+)
 @click.option(
     "--max-pages",
     type=int,
@@ -135,7 +141,7 @@ def review(
     default=0.7,
     help="Weight for keyword relevance scoring (default: 0.7)",
 )
-def crawl(urls: List[str], **kwargs: dict[str, Any]) -> None:
+def crawl(urls: List[str], **kwargs: Any) -> None:
     """Run the web crawler."""
     from code_reviewer_agent.services.crawler import CrawlService
 

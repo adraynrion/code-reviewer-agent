@@ -1,11 +1,12 @@
 import sys
 import time
-from typing import List, Optional
+from typing import List
 
 from pydantic_ai import Agent
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import (
+    CodeDiff,
     InstructionsPath,
     Platform,
     Repository,
@@ -19,7 +20,6 @@ from code_reviewer_agent.prompts.cr_agent import USER_PROMPT
 from code_reviewer_agent.services.base_service import BaseService
 from code_reviewer_agent.services.github import GitHubReviewerService
 from code_reviewer_agent.services.gitlab import GitLabReviewerService
-from code_reviewer_agent.services.repository import CodeDiff, RepositoryService
 from code_reviewer_agent.utils.rich_utils import (
     console,
     print_debug,
@@ -35,15 +35,7 @@ from code_reviewer_agent.utils.rich_utils import (
 
 
 class CodeReviewService(BaseService):
-    _reviewer_agent = None
-    _repository_service = None
-    _github_token = Token()
-    _gitlab_token = Token()
-    _gitlab_url = Url()
-    _platform = Platform()
-    _repository = Repository()
-    _instructions_path = InstructionsPath()
-    _request_id = RequestId()
+    _repository_service: GitHubReviewerService | GitLabReviewerService
 
     def __init__(
         self,
@@ -56,16 +48,17 @@ class CodeReviewService(BaseService):
         self._reviewer_agent = ReviewerAgent(self.config)
 
         reviewer_config = self.config.schema.reviewer
-        self._github_token = reviewer_config.github_token
-        self._gitlab_token = reviewer_config.gitlab_token
-        self._gitlab_url = reviewer_config.gitlab_api_url
-        self._platform = platform or reviewer_config.platform
-        self._repository = repository or reviewer_config.repository
-        self._instructions_path = (
+        self._github_token = Token(reviewer_config.github_token)
+        self._gitlab_token = Token(reviewer_config.gitlab_token)
+        self._gitlab_url = Url(reviewer_config.gitlab_api_url)
+        self._platform = Platform(platform or reviewer_config.platform)
+        self._repository = Repository(repository or reviewer_config.repository)
+        self._instructions_path = InstructionsPath(
             instructions_path or reviewer_config.instruction_dir_path
         )
-        self._request_id = request_id
+        self._request_id = RequestId(request_id)
 
+        # Initialize with the correct service based on platform
         self.repository_service = self.platform
 
     @property
@@ -82,7 +75,7 @@ class CodeReviewService(BaseService):
 
     @github_token.setter
     def github_token(self, value: str) -> None:
-        Token.__set__(self._github_token, value)
+        self._github_token = Token(value)
 
     @property
     def gitlab_token(self) -> Token:
@@ -90,7 +83,7 @@ class CodeReviewService(BaseService):
 
     @gitlab_token.setter
     def gitlab_token(self, value: str) -> None:
-        Token.__set__(self._gitlab_token, value)
+        self._gitlab_token = Token(value)
 
     @property
     def gitlab_url(self) -> Url:
@@ -98,14 +91,14 @@ class CodeReviewService(BaseService):
 
     @gitlab_url.setter
     def gitlab_url(self, value: str) -> None:
-        Url.__set__(self._gitlab_url, value)
+        self._gitlab_url = Url(value)
 
     @property
     def platform(self) -> Platform:
         return self._platform
 
     @platform.setter
-    def platform(self, value: str):
+    def platform(self, value: Platform) -> None:
         formated_value = value.lower().strip()
         if formated_value not in ("github", "gitlab"):
             raise ValueError("Invalid platform. Must be either 'github' or 'gitlab'.")
@@ -119,7 +112,7 @@ class CodeReviewService(BaseService):
             raise ValueError(
                 "gitlab_token config variable is required when platform is 'gitlab'."
             )
-        Platform.__set__(self._platform, formated_value)
+        self._platform = Platform(formated_value)
 
     @property
     def repository(self) -> Repository:
@@ -127,7 +120,7 @@ class CodeReviewService(BaseService):
 
     @repository.setter
     def repository(self, value: str) -> None:
-        Repository.__set__(self._repository, value)
+        self._repository = Repository(value)
 
     @property
     def instructions_path(self) -> InstructionsPath:
@@ -135,7 +128,7 @@ class CodeReviewService(BaseService):
 
     @instructions_path.setter
     def instructions_path(self, value: str) -> None:
-        InstructionsPath.__set__(self._instructions_path, value)
+        self._instructions_path = InstructionsPath(value)
 
     @property
     def request_id(self) -> RequestId:
@@ -143,14 +136,14 @@ class CodeReviewService(BaseService):
 
     @request_id.setter
     def request_id(self, value: int) -> None:
-        RequestId.__set__(self._request_id, value)
+        self._request_id = RequestId(value)
 
     @property
-    def repository_service(self) -> RepositoryService:
+    def repository_service(self) -> GitHubReviewerService | GitLabReviewerService:
         return self._repository_service
 
     @repository_service.setter
-    def repository_service(self, platform: Platform):
+    def repository_service(self, platform: Platform) -> None:
         if platform == "github":
             self._repository_service = GitHubReviewerService(
                 self.repository, self.request_id, self._config.schema.reviewer
@@ -164,9 +157,9 @@ class CodeReviewService(BaseService):
 
     async def _file_code_review_without_langfuse(
         self, diff: CodeDiff, user_input: str
-    ) -> None:
+    ) -> CodeReviewResponse:
         start_time = time.perf_counter()
-        reviewer_output: Optional[CodeReviewResponse] = None
+        reviewer_output: CodeReviewResponse
 
         try:
             reviewer_response = await self.agent.run(
@@ -186,11 +179,11 @@ class CodeReviewService(BaseService):
         print_debug(f"Code review completed in {duration:.2f} seconds")
         print_success(f"Code review response successfully retrieved from Agent")
 
-        print_debug(reviewer_output)
+        print_debug(str(reviewer_output))
 
         # Post review comments to the PR/MR
         try:
-            self.repository_service.post_review_comments(diff, reviewer_output)
+            await self.repository_service.post_review_comments(diff, reviewer_output)
             return reviewer_output
         except Exception as post_error:
             raise Exception(f"Failed to post review: {str(post_error)}")
@@ -215,14 +208,14 @@ class CodeReviewService(BaseService):
             )
 
             file_review_span.set_attribute("input.value", user_input)
-            file_review_span.set_attribute("output.value", reviewer_output)
+            file_review_span.set_attribute("output.value", str(reviewer_output))
 
     async def _review_files_without_langfuse(self) -> int:
         files_reviewed = 0
         for diff in self.repository_service.diffs:
             try:
                 filename = diff.get("filename", "unknown")
-                languages = ", ".join(diff.get("languages", ["unknown"]))
+                languages = diff.get("languages", ["unknown"])
                 patch = diff.get("patch", "")
 
                 if not patch:
@@ -231,7 +224,7 @@ class CodeReviewService(BaseService):
 
                 if self.debug:
                     print_info(f"Reviewing file: {filename}")
-                    print_info(f"  - Languages: {languages}")
+                    print_info(f"  - Languages: {', '.join(languages)}")
                     print_diff(patch)
 
                 # Prepare the User input for the code review
@@ -243,9 +236,13 @@ class CodeReviewService(BaseService):
                 print_info(f"Starting code review for file: {filename}")
 
                 if self.langfuse.enabled:
-                    await self._file_code_review(diff, filename, languages, user_input)
+                    await self._file_code_review(
+                        CodeDiff(**diff), filename, languages, user_input
+                    )
                 else:
-                    await self._file_code_review_without_langfuse(diff, user_input)
+                    await self._file_code_review_without_langfuse(
+                        CodeDiff(**diff), user_input
+                    )
 
                 files_reviewed += 1
 

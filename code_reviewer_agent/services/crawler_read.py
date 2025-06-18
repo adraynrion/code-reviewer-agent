@@ -1,7 +1,10 @@
 from openai import OpenAI
-from supabase._sync.client import SyncClient
 
-from code_reviewer_agent.models.crawler_agents import ConfigArgs, CrawledDocuments
+from code_reviewer_agent.models.base_types import (
+    ConfigArgs,
+    CrawledDocument,
+    CrawledDocuments,
+)
 from code_reviewer_agent.utils.rich_utils import (
     print_error,
     print_info,
@@ -9,23 +12,32 @@ from code_reviewer_agent.utils.rich_utils import (
     print_success,
     print_warning,
 )
+from supabase import Client as SupabaseClient
 
 
 class CrawlerReader:
-    _openai_client: OpenAI
-    supabase_client: SyncClient
-    embedding_model: str
-    debug: bool
-
     def __init__(self, args: ConfigArgs) -> None:
-        self._openai_client = args.get("openai_client")
-        self.supabase_client = args.get("supabase_client")
-        self.embedding_model = args.get("embedding_model")
-        self.debug = args.get("debug")
+        self._openai_client = OpenAI()
+        self.supabase_client = SupabaseClient(
+            supabase_url=str(args.get("supabase_url", "")),
+            supabase_key=str(args.get("supabase_key", "")),
+        )
+        self.embedding_model = str(args.get("embedding_model", ""))
+        self.debug = bool(args.get("debug", False))
 
     def search_documents(
         self, query: str, match_threshold: float = 0.8
     ) -> CrawledDocuments:
+        """Search for documents similar to the query using vector embeddings.
+
+        Args:
+            query: The search query text
+            match_threshold: The similarity threshold (0-1) for matching documents
+
+        Returns:
+            List of matching document chunks with their content and similarity scores
+
+        """
         try:
             print_info(f"Generating embeddings for query: {query}")
             embeddings_response = self._openai_client.embeddings.create(
@@ -45,7 +57,9 @@ class CrawlerReader:
             if not hasattr(response, "data"):
                 raise ValueError("Unexpected response format from Supabase")
 
-            results = [dict(item) for item in response.data]
+            results: list[CrawledDocument] = [
+                CrawledDocument(**item) for item in response.data
+            ]
             print_success(f"Found {len(results)} matching document chunks(s)")
 
             if self.debug:
@@ -54,9 +68,9 @@ class CrawlerReader:
                     print_info(f"  Content: {result.get('content', '')}")
                     print_info(f"  Similarity: {result.get('similarity', 0):.4f}")
 
-            return results
+            return CrawledDocuments(results)
 
         except Exception as e:
             print_error(f"Error searching documents: {str(e)}")
             print_warning("Search failed, proceeding with empty results")
-            return []
+            return CrawledDocuments()

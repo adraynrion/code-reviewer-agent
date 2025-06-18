@@ -1,23 +1,11 @@
 import os
-from typing import Dict, List, Set, Tuple, Union
 
-from code_reviewer_agent.models.base_types import StringValidator
-
-
-class Filename(StringValidator):
-    pass
-
-
-class FilesPath(Union[str, List[str]]):
-    pass
-
-
-class LanguageTuple(Tuple[str]):
-    pass
-
-
-class FileLanguages(Dict[str, Set[str]]):
-    pass
+from code_reviewer_agent.models.base_types import (
+    Filename,
+    FilesPath,
+    Languages,
+    LanguageTuple,
+)
 
 
 class LanguageUtils:
@@ -101,16 +89,16 @@ class LanguageUtils:
         ext = filename.split(".")[-1].lower()
         if not ext or ext == filename:
             return LanguageTuple()
-        return cls._language_dict.get(ext, LanguageTuple())
+        return LanguageTuple(tuple(cls._language_dict.get(ext, [])))
 
     @classmethod
-    def get_file_languages(cls, file_paths: FilesPath) -> FileLanguages:
-        languages: FileLanguages = {}
-        for file_path in file_paths:
+    def get_file_languages(cls, files_path: FilesPath) -> Languages:
+        languages = Languages()
+        for file_path in files_path:
             filename = os.path.basename(file_path)
-            detected_languages = cls._detect_language(filename)
+            detected_languages = cls._detect_language(Filename(filename))
             for lang in detected_languages:
                 if file_path not in languages:
                     languages[file_path] = set()
                 languages[file_path].add(lang)
-        return languages
+        return Languages(languages)

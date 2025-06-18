@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
 
 from code_reviewer_agent.models.base_types import (
+    CodeDiff,
     CommitSha,
     Files,
     FilesDiff,
@@ -11,7 +11,7 @@ from code_reviewer_agent.models.base_types import (
     RequestId,
 )
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
-from code_reviewer_agent.utils.file_utils import LanguageUtils
+from code_reviewer_agent.utils.language_utils import FilesPath, LanguageUtils
 from code_reviewer_agent.utils.rich_utils import (
     print_debug,
     print_info,
@@ -22,13 +22,6 @@ from code_reviewer_agent.utils.rich_utils import (
 
 
 class RepositoryService(ABC):
-    _repository = Repository()
-    _request_id = RequestId()
-    _diffs = None
-    _language_utils = LanguageUtils
-    _languages = Languages()
-    _last_commit_sha = CommitSha()
-
     def __init__(self, repository: Repository, request_id: RequestId) -> None:
         self._repository = repository
         self._request_id = request_id
@@ -46,17 +39,19 @@ class RepositoryService(ABC):
         return self._diffs
 
     @diffs.setter
-    def diffs(self, files: Files):
+    def diffs(self, files: Files) -> None:
         """Transform given Files to a Tuple of FilesDiff."""
         print_section("Processing files", "📄")
-        filename_list = tuple(file.get("filename") for file in files)
-        self.languages = self._language_utils.get_file_languages(filename_list)
+        filename_list = FilesPath(
+            tuple(str(file.get("filename", "")) for file in files)
+        )
+        self.languages = LanguageUtils.get_file_languages(filename_list)
 
         print_info("Retrieving code diffs by file...")
-        files_diff: FilesDiff = []
+        files_diff = []
         for file in files:
-            filename = file.get("filename")
-            patch = file.get("patch", "")
+            filename: str = file.get("filename", "")
+            patch: str = file.get("patch", "")
             if not self.languages.get(filename):
                 print_warning(
                     f"Skipping file analysis {filename}: no languages detected"
@@ -78,7 +73,7 @@ class RepositoryService(ABC):
             raise ValueError("No languages detected for files to review")
 
         print_success("Successfully retrieved code diffs by file!")
-        self._diffs = Tuple(files_diff)
+        self._diffs = FilesDiff(tuple(files_diff))
 
     @property
     def languages(self) -> Languages:
@@ -86,7 +81,7 @@ class RepositoryService(ABC):
 
     @languages.setter
     def languages(self, value: Languages) -> None:
-        Languages.__set__(self._languages, value)
+        self._languages = Languages(value)
 
     @property
     def last_commit_sha(self) -> CommitSha:
@@ -94,19 +89,19 @@ class RepositoryService(ABC):
 
     @last_commit_sha.setter
     def last_commit_sha(self, sha: str) -> None:
-        CommitSha.__set__(self._last_commit_sha, sha)
+        self._last_commit_sha = CommitSha(sha)
 
     @property
     def reviewed_label(self) -> Label:
-        return "ReviewedByAI"
+        return Label("ReviewedByAI")
 
     @abstractmethod
-    def request_files_analysis_from_api(self) -> Files:
+    def request_files_analysis_from_api(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
     async def post_review_comments(
-        self, diff: Dict[str, Any], reviewer_output: CodeReviewResponse
+        self, diff: CodeDiff, reviewer_output: CodeReviewResponse
     ) -> None:
         raise NotImplementedError
 

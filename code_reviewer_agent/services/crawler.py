@@ -1,5 +1,5 @@
 import sys
-from typing import List
+from typing import Any, List
 
 from rich.table import Table
 
@@ -10,111 +10,66 @@ from code_reviewer_agent.models.base_types import (
     ConcurrentTasks,
     EmbeddingModel,
     ExtractionType,
-    Headless,
+    Keywords,
+    KeywordWeight,
+    Locale,
     MaxDepth,
     MaxPages,
     MaxTokens,
     OverlapRate,
-    PositiveFloatValidator,
     Temperature,
+    Timezone,
     Urls,
 )
 from code_reviewer_agent.models.crawler_agents import CrawlerAgents
 from code_reviewer_agent.services.base_service import BaseService
 from code_reviewer_agent.utils.rich_utils import (
     console,
-    print_debug,
     print_error,
     print_header,
     print_success,
 )
 
 
-class Locale(StringValidator):
-    def __set__(self, instance, value: str) -> None:
-        formated_value = value.lower().strip()
-
-        from babel import Locale
-
-        try:
-            Locale.parse(formated_value, sep="-")
-        except ValueError:
-            raise ValueError(
-                f"Invalid locale. Must be a valid BCP 47 language tag. Got {formated_value}"
-            )
-
-        super().__set__(instance, formated_value)
-
-
-class Timezone(StringValidator):
-    def __set__(self, instance, value: str) -> None:
-        formated_value = value.lower().strip()
-
-        from dateutil.tz import gettz
-
-        if gettz(formated_value) is None:
-            raise ValueError(
-                f"Invalid timezone. Must be a valid timezone string. Got {formated_value}"
-            )
-
-        super().__set__(instance, formated_value)
-
-
-class Keywords(List[str]):
-    pass
-
-
-class KeywordWeight(PositiveFloatValidator):
-    pass
-
-
 class CrawlService(BaseService):
-    _agents = None
-    _enabled = False
-    _openai_api_key = ApiKey()
-    _embedding_model = EmbeddingModel()
-    _urls = Urls()
-    _max_pages = MaxPages()
-    _max_depth = MaxDepth()
-    _concurrent_tasks = ConcurrentTasks()
-    _extraction_type = ExtractionType()
-    _chunk_token_threshold = ChunkTokenThreshold()
-    _overlap_rate = OverlapRate()
-    _temperature = Temperature()
-    _max_tokens = MaxTokens()
-    _headless = Headless()
-    _locale = Locale()
-    _timezone = Timezone()
-    _keywords = Keywords()
-    _keyword_weight = KeywordWeight()
-
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(Config())
 
         crawler_config = self.config.schema.crawler
         self._enabled = crawler_config.enabled
-        self._openai_api_key = crawler_config.openai_api_key
-        self._embedding_model = crawler_config.embedding_model
+        self._openai_api_key = ApiKey(crawler_config.openai_api_key)
+        self._embedding_model = EmbeddingModel(crawler_config.embedding_model)
 
-        self._urls = kwargs.get("urls")
-        self._max_pages = kwargs.get("max_pages") or crawler_config.max_pages
-        self._max_depth = kwargs.get("max_depth") or crawler_config.max_depth
-        self._concurrent_tasks = (
+        urls = kwargs.get("urls")
+        if not urls:
+            raise ValueError("URLs are required")
+        elif not isinstance(urls, list):
+            raise ValueError("URLs must be a list")
+        self._urls = Urls(urls)
+        self._max_pages = MaxPages(kwargs.get("max_pages") or crawler_config.max_pages)
+        self._max_depth = MaxDepth(kwargs.get("max_depth") or crawler_config.max_depth)
+        self._concurrent_tasks = ConcurrentTasks(
             kwargs.get("concurrent_tasks") or crawler_config.concurrent_tasks
         )
-        self._extraction_type = (
+        self._extraction_type = ExtractionType(
             kwargs.get("extraction_type") or crawler_config.extraction_type
         )
-        self._chunk_token_threshold = (
+        self._chunk_token_threshold = ChunkTokenThreshold(
             kwargs.get("chunk_token_threshold") or crawler_config.chunk_token_threshold
         )
-        self._overlap_rate = kwargs.get("overlap_rate") or crawler_config.overlap_rate
-        self._temperature = kwargs.get("temperature") or crawler_config.temperature
-        self._max_tokens = kwargs.get("max_tokens") or crawler_config.max_tokens
-        self._headless = kwargs.get("headless") or crawler_config.headless
-        self._locale = kwargs.get("locale") or crawler_config.locale
-        self._timezone = kwargs.get("timezone") or crawler_config.timezone
-        self._keywords = (
+        self._overlap_rate = OverlapRate(
+            kwargs.get("overlap_rate") or crawler_config.overlap_rate
+        )
+        self._temperature = Temperature(
+            kwargs.get("temperature") or crawler_config.temperature
+        )
+        self._max_tokens = MaxTokens(
+            kwargs.get("max_tokens") or crawler_config.max_tokens
+        )
+        self._headless = bool(kwargs.get("headless") or crawler_config.headless)
+        self._locale = Locale(kwargs.get("locale") or crawler_config.locale)
+        self._timezone = Timezone(kwargs.get("timezone") or crawler_config.timezone)
+        self._keywords = Keywords(
             kwargs.get("keywords")
             or crawler_config.keywords
             or (
@@ -125,42 +80,36 @@ class CrawlService(BaseService):
                 "documentation",
             )
         )
-        self._keyword_weight = (
+        self._keyword_weight = KeywordWeight(
             kwargs.get("keyword_weight") or crawler_config.keyword_weight
         )
 
         self._agents = CrawlerAgents(self.config, self.urls)
 
-    def __dict__(self) -> dict:
-        return {
-            "enabled": self._enabled,
-            "openai_api_key": self._openai_api_key,
-            "embedding_model": self._embedding_model,
-            "urls": self._urls,
-            "max_pages": self._max_pages,
-            "max_depth": self._max_depth,
-            "concurrent_tasks": self._concurrent_tasks,
-            "extraction_type": self._extraction_type,
-            "chunk_token_threshold": self._chunk_token_threshold,
-            "overlap_rate": self._overlap_rate,
-            "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
-            "headless": self._headless,
-            "locale": self._locale,
-            "timezone": self._timezone,
-            "keywords": self._keywords,
-            "keyword_weight": self._keyword_weight,
-        }
+    def __dir__(self) -> list[str]:
+        return [
+            "enabled",
+            "openai_api_key",
+            "embedding_model",
+            "urls",
+            "max_pages",
+            "max_depth",
+            "concurrent_tasks",
+            "extraction_type",
+            "chunk_token_threshold",
+            "overlap_rate",
+            "temperature",
+            "max_tokens",
+            "headless",
+            "locale",
+            "timezone",
+            "keywords",
+            "keyword_weight",
+        ]
 
-    def __repr__(self) -> str:
-        table = Table(title="Current Configuration", show_header=False, show_lines=True)
-        table.add_column("Setting", style="cyan")
-        table.add_column("Value", style="green")
-
-        for key, value in self.__dict__().items():
-            table.add_row(key, value)
-
-        return table
+    @property
+    def debug(self) -> bool:
+        return self._config.schema.logging.debug
 
     @property
     def agents(self) -> CrawlerAgents:
@@ -184,7 +133,7 @@ class CrawlService(BaseService):
 
     @urls.setter
     def urls(self, value: List[str]) -> None:
-        Urls.__set__(self._urls, value)
+        self._urls = Urls(value)
 
     @property
     def max_pages(self) -> MaxPages:
@@ -192,7 +141,7 @@ class CrawlService(BaseService):
 
     @max_pages.setter
     def max_pages(self, value: int) -> None:
-        MaxPages.__set__(self._max_pages, value)
+        self._max_pages = MaxPages(value)
 
     @property
     def max_depth(self) -> MaxDepth:
@@ -200,7 +149,7 @@ class CrawlService(BaseService):
 
     @max_depth.setter
     def max_depth(self, value: int) -> None:
-        MaxDepth.__set__(self._max_depth, value)
+        self._max_depth = MaxDepth(value)
 
     @property
     def concurrent_tasks(self) -> ConcurrentTasks:
@@ -208,20 +157,20 @@ class CrawlService(BaseService):
 
     @concurrent_tasks.setter
     def concurrent_tasks(self, value: int) -> None:
-        ConcurrentTasks.__set__(self._concurrent_tasks, value)
+        self._concurrent_tasks = ConcurrentTasks(value)
 
     @property
     def extraction_type(self) -> ExtractionType:
         return self._extraction_type
 
     @extraction_type.setter
-    def extraction_type(self, value: str):
+    def extraction_type(self, value: str) -> None:
         formated_value = value.lower().strip()
         if formated_value not in ("schema", "block"):
             raise ValueError(
                 "Invalid extraction type. Must be either 'schema' or 'block'."
             )
-        ExtractionType.__set__(self._extraction_type, formated_value)
+        self._extraction_type = ExtractionType(formated_value)
 
     @property
     def chunk_token_threshold(self) -> ChunkTokenThreshold:
@@ -229,7 +178,7 @@ class CrawlService(BaseService):
 
     @chunk_token_threshold.setter
     def chunk_token_threshold(self, value: int) -> None:
-        ChunkTokenThreshold.__set__(self._chunk_token_threshold, value)
+        self._chunk_token_threshold = ChunkTokenThreshold(value)
 
     @property
     def overlap_rate(self) -> OverlapRate:
@@ -237,7 +186,7 @@ class CrawlService(BaseService):
 
     @overlap_rate.setter
     def overlap_rate(self, value: float) -> None:
-        OverlapRate.__set__(self._overlap_rate, value)
+        self._overlap_rate = OverlapRate(value)
 
     @property
     def temperature(self) -> Temperature:
@@ -245,7 +194,7 @@ class CrawlService(BaseService):
 
     @temperature.setter
     def temperature(self, value: float) -> None:
-        Temperature.__set__(self._temperature, value)
+        self._temperature = Temperature(value)
 
     @property
     def max_tokens(self) -> MaxTokens:
@@ -253,15 +202,15 @@ class CrawlService(BaseService):
 
     @max_tokens.setter
     def max_tokens(self, value: int) -> None:
-        MaxTokens.__set__(self._max_tokens, value)
+        self._max_tokens = MaxTokens(value)
 
     @property
-    def headless(self) -> Headless:
+    def headless(self) -> bool:
         return self._headless
 
     @headless.setter
     def headless(self, value: bool) -> None:
-        Headless.__set__(self._headless, value)
+        self._headless = bool(value)
 
     @property
     def locale(self) -> Locale:
@@ -269,7 +218,7 @@ class CrawlService(BaseService):
 
     @locale.setter
     def locale(self, value: str) -> None:
-        Locale.__set__(self._locale, value)
+        self._locale = Locale(value)
 
     @property
     def timezone(self) -> Timezone:
@@ -277,7 +226,7 @@ class CrawlService(BaseService):
 
     @timezone.setter
     def timezone(self, value: str) -> None:
-        Timezone.__set__(self._timezone, value)
+        self._timezone = Timezone(value)
 
     @property
     def keywords(self) -> Keywords:
@@ -285,7 +234,7 @@ class CrawlService(BaseService):
 
     @keywords.setter
     def keywords(self, value: List[str]) -> None:
-        Keywords.__set__(self._keywords, value)
+        self._keywords = Keywords(value)
 
     @property
     def keyword_weight(self) -> KeywordWeight:
@@ -293,31 +242,27 @@ class CrawlService(BaseService):
 
     @keyword_weight.setter
     def keyword_weight(self, value: float) -> None:
-        KeywordWeight.__set__(self._keyword_weight, value)
+        self._keyword_weight = KeywordWeight(value)
 
     async def main(self) -> None:
         console.clear()
         print_header("Starting Web Crawler Service process")
-        print_debug(self)
 
-        results = await self.agents.writter.crawl_urls(
-            urls=self.urls,
-            max_pages=self.max_pages,
-            max_depth=self.max_depth,
-            concurrent_tasks=self.concurrent_tasks,
-            extraction_type=self.extraction_type,
-            chunk_token_threshold=self.chunk_token_threshold,
-            overlap_rate=self.overlap_rate,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            headless=self.headless,
-            locale=self.locale,
-            timezone=self.timezone,
-            keywords=self.keywords,
-            keyword_weight=self.keyword_weight,
-        )
+        if self.debug:
+            table = Table(
+                title="Current Configuration", show_header=False, show_lines=True
+            )
+            table.add_column("Setting", style="cyan")
+            table.add_column("Value", style="green")
 
-        if not results:
+            for key in dir(self):
+                table.add_row(key, getattr(self, key))
+
+            console.print(table)
+
+        successful_crawls = await self.agents.writter.crawl_urls()
+
+        if not successful_crawls:
             print_error(
                 (
                     "No documents were crawled. "
@@ -328,6 +273,6 @@ class CrawlService(BaseService):
             sys.exit(1)
 
         print_success(
-            f"Successfully crawled {len(results)} documents from {len(self.urls)} URLs!"
+            f"Successfully crawled {successful_crawls} documents from {len(self.urls)} URLs!"
         )
         sys.exit(0)

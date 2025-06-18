@@ -1,11 +1,10 @@
 import requests
 from requests.exceptions import RequestException
 
-from code_reviewer_agent.models.base_types import GitHubToken
+from code_reviewer_agent.models.base_types import CodeDiff, GitHubToken
 from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
 from code_reviewer_agent.services.repository import (
-    CodeDiff,
     Files,
     Repository,
     RepositoryService,
@@ -24,7 +23,7 @@ class GitHubReviewerService(RepositoryService):
         self, repository: Repository, request_id: RequestId, config: ReviewerConfig
     ) -> None:
         RepositoryService.__init__(self, repository, request_id)
-        self._github_token = config.github_token
+        self._github_token = GitHubToken(config.github_token)
 
     @property
     def github_token(self) -> GitHubToken:
@@ -111,9 +110,9 @@ class GitHubReviewerService(RepositoryService):
             )
         print_success("Successfully posted review comment!")
 
-        self._assign_reviewed_label()
+        await self._assign_reviewed_label()
 
-    def _assign_reviewed_label(self):
+    async def _assign_reviewed_label(self) -> None:
         # ===== Update PR with reviewed_label =====
         print_section(
             f"Updating PR #{self.request_id} of GitHub repo {self.repository}", "🏷️"

@@ -6,7 +6,7 @@ import yaml
 from rich.table import Table
 
 from code_reviewer_agent.models.pydantic_config_models import ConfigModel
-from code_reviewer_agent.utils.rich_utils import print_debug
+from code_reviewer_agent.utils.rich_utils import console, print_debug
 
 
 class ConfigFilePath:
@@ -15,7 +15,7 @@ class ConfigFilePath:
     def __init__(self) -> None:
         self.find_file()
 
-    def find_file(self):
+    def find_file(self) -> None:
         for path in self.default_paths:
             if path.exists():
                 self.file = path
@@ -26,7 +26,7 @@ class ConfigFilePath:
         )
 
     @property
-    def default_paths(self):
+    def default_paths(self) -> list[Path]:
         return [
             Path.cwd() / "config.yaml",  # ./config.yaml
             Path.home()
@@ -50,7 +50,7 @@ class Config:
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Config":
         if not cls._instance:
             cls._instance = super(Config, cls).__new__(cls, *args, **kwargs)
         return cls._instance
@@ -59,10 +59,10 @@ class Config:
         self._file = ConfigFilePath()
         self._load_config_from_file()
 
-        os.environ["DEBUG"] = self.debug
-        print_debug(self)
+        os.environ["DEBUG"] = self.debug.__str__()
+        console.print(self.to_table())
 
-    def __repr__(self) -> str:
+    def to_table(self) -> Table:
         """Print the current configuration schema (without sensitive data)."""
 
         table = Table(title="Current Configuration", show_header=False, show_lines=True)

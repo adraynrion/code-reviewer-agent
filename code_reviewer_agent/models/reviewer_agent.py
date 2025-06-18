@@ -1,13 +1,13 @@
 import os
-from weakref import WeakKeyDictionary
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_agent import AiModel, AiModelType
+from code_reviewer_agent.models.base_types import ConfigArgs
 from code_reviewer_agent.prompts.cr_agent import SYSTEM_PROMPT
-from code_reviewer_agent.services.crawler_read import search_documents
+from code_reviewer_agent.services.crawler_read import CrawlerReader
 from code_reviewer_agent.utils.rich_utils import (
     print_debug,
     print_header,
@@ -18,37 +18,27 @@ from code_reviewer_agent.utils.rich_utils import (
 )
 
 
-class InstructionPath:
-    """Instruction path validator."""
-
-    def __init__(self) -> None:
-        self._valeurs = WeakKeyDictionary()
-
-    def __get__(self, instance, owner) -> tuple[str]:
-        return self._valeurs.get(instance, tuple())
-
-    def __set__(self, instance, instruction_path: str) -> None:
+class InstructionPath(tuple):
+    def __new__(cls, value: str) -> "InstructionPath":
         print_section("Retrieving additional filesystem instructions")
 
-        if not os.path.exists(instruction_path) and not os.path.isdir(instruction_path):
+        if not os.path.exists(value) and not os.path.isdir(value):
             print_warning(
                 "Additional filesystem instructions folder invalid or not found! "
                 "Continuing without any filesystem instructions."
             )
-            return
+            return super().__new__(cls, [])
 
-        print_info(f"Looking for instructions in: {instruction_path}")
+        print_info(f"Looking for instructions in: {value}")
         filesystem_instructions = []
         try:
             # List all files in the instructions directory using direct filesystem access
             instructions_files = (
-                f
-                for f in os.listdir(instruction_path)
-                if os.path.isfile(os.path.join(instruction_path, f))
+                f for f in os.listdir(value) if os.path.isfile(os.path.join(value, f))
             )
 
             for file in instructions_files:
-                file_path = os.path.join(instruction_path, file)
+                file_path = os.path.join(value, file)
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
@@ -63,26 +53,25 @@ class InstructionPath:
             print_success(
                 f"Successfully loaded {len(filesystem_instructions)} instruction file(s)"
             )
-            self._valeurs[instance] = tuple(filesystem_instructions)
+            return super().__new__(cls, filesystem_instructions)
         except Exception as e:
             print_warning(f"Error while retrieving filesystem instructions: {str(e)}")
             print_warning("Continuing without filesystem instructions")
-
-    def __delete__(self, instance):
-        if instance in self._valeurs:
-            del self._valeurs[instance]
-        else:
-            raise AttributeError("Instruction path not set")
+            return super().__new__(cls, [])
 
 
 class ReviewerAgent(AiModel, metaclass=AiModelType):
-    _instruction_path = InstructionPath()
-
     def __init__(self, config: Config) -> None:
         AiModel.__init__(self, config)
 
-        self._instruction_path = config.schema.reviewer.instruction_dir_path
+        self._instruction_path = InstructionPath(
+            config.schema.reviewer.instruction_dir_path
+        )
         self._setup_agent()
+
+    @property
+    def embedding_model(self) -> str:
+        return self._config.schema.crawler.embedding_model
 
     @property
     def agent(self) -> Agent[None, str]:
@@ -94,7 +83,15 @@ class ReviewerAgent(AiModel, metaclass=AiModelType):
         system_prompt = SYSTEM_PROMPT.format(
             custom_user_instructions="\n".join(self._instruction_path)
         )
-        tools = [search_documents]
+
+        config_args = ConfigArgs(
+            supabase_url=self._config.schema.supabase.url,
+            supabase_key=self._config.schema.supabase.key,
+            embedding_model=self.embedding_model,
+            debug=self.debug,
+        )
+        crawler_reader = CrawlerReader(config_args)
+        tools = [crawler_reader.search_documents]
 
         print_debug(f"System prompt length: {len(system_prompt)}")
         print_debug(f"Tools length: {len(tools)}")

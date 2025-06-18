@@ -1,6 +1,6 @@
-from pydantic_ai.models import Model
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers import Provider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
@@ -50,22 +50,18 @@ class LLMDict:
 
 
 class AiModel:
-    _debug: bool
-    _api_key = ApiKey()
-    _base_url = BaseUrl()
-    _provider = ModelProvider()
-    _llm = LLM()
-    _llm_config: LLMDict
-    supabase: SupabaseModel
+    _provider: Provider
+    _model: OpenAIModel | GoogleModel
 
     def __init__(self, config: Config) -> None:
+        self._config = config
         self._debug = config.schema.logging.debug
 
         llm = config.schema.reviewer.llm
-        self._api_key = llm.api_key
-        self._base_url = llm.base_url
-        self.provider = llm.provider
-        self.llm = llm.model_name
+        self._api_key = ApiKey(llm.api_key)
+        self._base_url = BaseUrl(llm.base_url)
+        self.provider = ModelProvider(llm.provider)
+        self.llm = LLM(llm.model_name)
 
         self._llm_config = LLMDict(llm)
         self.supabase = SupabaseModel(config)
@@ -83,11 +79,11 @@ class AiModel:
         return self._base_url
 
     @property
-    def provider(self) -> ModelProvider:
+    def provider(self) -> Provider:
         return self._provider
 
     @provider.setter
-    def provider(self, value: ModelProvider):
+    def provider(self, value: ModelProvider) -> None:
         if not self.base_url or not self.api_key:
             raise ValueError("Base URL and API key must be set before provider")
 
@@ -110,19 +106,25 @@ class AiModel:
         return self._llm
 
     @llm.setter
-    def llm(self, value: LLM):
+    def llm(self, value: LLM) -> None:
         if not self.provider:
             raise ValueError("Provider must be set before LLM")
 
         self._llm = value
 
         if self.provider in ("OpenAI", "TogetherAI", "OpenRouter"):
-            self._model = OpenAIModel(self.llm, self.provider)
+            self._model = OpenAIModel(
+                model_name=self.llm,
+                provider=self.provider,
+            )
         elif self.provider == "Google":
-            self._model = GoogleModel(self.llm, self.provider)
+            self._model = GoogleModel(
+                model_name=self.llm,
+                provider=self.provider,
+            )
 
     @property
-    def model(self) -> Model:
+    def model(self) -> OpenAIModel | GoogleModel:
         return self._model
 
     @property
@@ -131,13 +133,7 @@ class AiModel:
 
 
 class AiModelType(type):
-    """Type for AiModel classes.
-
-    Ensures that all classes inherit from AiModel.
-
-    """
-
-    def __new__(cls, name, bases, dct):
+    def __new__(cls, name: str, bases: tuple, dct: dict) -> "AiModelType":
         inherit_from_AiModel = False
         for base in bases:
             if base is AiModel:

@@ -3,8 +3,8 @@ from code_reviewer_agent.utils.langfuse import LangfuseModel
 
 
 class BaseService:
-    _config = None
-    _langfuse = None
+    _config: Config
+    _langfuse: LangfuseModel
 
     def __init__(self, config: Config) -> None:
         self._config = config
