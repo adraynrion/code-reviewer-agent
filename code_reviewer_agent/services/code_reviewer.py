@@ -21,7 +21,6 @@ from code_reviewer_agent.services.base_service import BaseService
 from code_reviewer_agent.services.github import GitHubReviewerService
 from code_reviewer_agent.services.gitlab import GitLabReviewerService
 from code_reviewer_agent.utils.rich_utils import (
-    console,
     print_debug,
     print_diff,
     print_error,
@@ -284,7 +283,6 @@ class CodeReviewService(BaseService):
             )
 
     async def main(self) -> None:
-        console.clear()
         print_header("Starting Code Reviewer Agent process")
 
         if self.debug:

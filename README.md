@@ -59,6 +59,7 @@ pip install -e '.[dev,crawler,langfuse]'
 pip install -e .
 
 # Install additional dependencies as needed
+pip install -e '.[dev]'  # For development
 pip install -e '.[crawler]'  # For web crawling functionality
 pip install -e '.[langfuse]'  # For Langfuse observability
 ```

@@ -28,7 +28,7 @@ class LangfuseModel:
 
     def __new__(cls, *args: Any, **kwargs: Any) -> "LangfuseModel":
         if not cls._instance:
-            cls._instance = super(LangfuseModel, cls).__new__(cls, *args, **kwargs)
+            cls._instance = super(LangfuseModel, cls).__new__(cls)
         return cls._instance
 
     def __init__(self, config: LangfuseConfig) -> None:

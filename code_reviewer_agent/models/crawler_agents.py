@@ -1,8 +1,14 @@
+from typing import Any, Dict, cast
+
+from openai import OpenAI
+from postgrest._sync.request_builder import SyncRequestBuilder
+
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import ConfigArgs
 from code_reviewer_agent.services.crawler import Urls
 from code_reviewer_agent.services.crawler_read import CrawlerReader
 from code_reviewer_agent.services.crawler_write import CrawlerWritter
+from supabase import create_client
 
 
 class CrawlerAgents:
@@ -11,6 +17,8 @@ class CrawlerAgents:
         args = ConfigArgs(
             {
                 "urls": urls,
+                "openai_client": self.openai_client,
+                "supabase_table": self.supabase_table,
                 "max_pages": config.schema.crawler.max_pages,
                 "max_depth": config.schema.crawler.max_depth,
                 "concurrent_tasks": config.schema.crawler.concurrent_tasks,
@@ -44,6 +52,20 @@ class CrawlerAgents:
     @property
     def reader(self) -> CrawlerReader:
         return self._reader
+
+    @property
+    def openai_client(self) -> OpenAI:
+        return OpenAI()
+
+    @property
+    def supabase_table(self) -> SyncRequestBuilder[Dict[str, Any]]:
+        return cast(
+            SyncRequestBuilder[Dict[str, Any]],
+            create_client(
+                self._config.schema.supabase.url,
+                self._config.schema.supabase.key,
+            ).table("documents"),
+        )
 
     @property
     def extraction_type(self) -> str:

@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, LLMConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
@@ -25,9 +25,12 @@ class CrawledDocumentModel(BaseModel):
 
 class CrawlerWritter:
     def __init__(self, args: ConfigArgs) -> None:
-        self.openai_client = args.get("openai_client")
-        self.supabase_table = args.get("supabase_table")
-        self.urls = list(args.get("urls", []))
+        self.openai_client = cast(OpenAI, args.get("openai_client"))
+        self.supabase_table = cast(
+            SyncRequestBuilder[Dict[str, Any]],
+            args.get("supabase_table"),
+        )
+        self.urls = tuple(args.get("urls", []))
         self.max_pages = int(args.get("max_pages", 10))
         self.max_depth = int(args.get("max_depth", 2))
         self.concurrent_tasks = int(args.get("concurrent_tasks", 5))
@@ -47,26 +50,6 @@ class CrawlerWritter:
         self.embedding_model = str(
             args.get("embedding_model", "text-embedding-3-small")
         )
-
-    @property
-    def openai_client(self) -> OpenAI:
-        return self._openai_client
-
-    @openai_client.setter
-    def openai_client(self, value: Any) -> None:
-        if not value or not isinstance(value, OpenAI):
-            raise ValueError("OpenAI client must be an instance of OpenAI")
-        self._openai_client: OpenAI = value
-
-    @property
-    def supabase_table(self) -> SyncRequestBuilder[Dict[str, Any]]:
-        return self._supabase_table
-
-    @supabase_table.setter
-    def supabase_table(self, value: Any) -> None:
-        if not value or not isinstance(value, SyncRequestBuilder):
-            raise ValueError("Supabase table must be an instance of SyncRequestBuilder")
-        self._supabase_table: SyncRequestBuilder[Dict[str, Any]] = value
 
     @property
     def extraction_type(self) -> str:
@@ -230,7 +213,7 @@ class CrawlerWritter:
                         progress.update(main_task, advance=1)
             except Exception as e:
                 progress.update(
-                    main_task, description=f"[red]! Error crawling {url}: {str(e)}"
+                    main_task, description=f"[red]! Error crawling {self.urls[i]}: {str(e)}"
                 )
             finally:
                 if successful_crawls == len(self.urls):
