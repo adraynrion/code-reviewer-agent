@@ -2,10 +2,11 @@
 """Main entry point for the code review agent."""
 
 import asyncio
-from typing import Any, List
+from typing import Any
 
 import click
 
+from code_reviewer_agent.models.base_types import Urls
 from code_reviewer_agent.services.code_reviewer import (
     CodeReviewService,
     InstructionsPath,
@@ -37,7 +38,7 @@ def cli() -> None:
     "--pr-id",
     "--mr-id",
     "pr_id",
-    type=int,
+    type=click.IntRange(min=1),
     help="Pull request or merge request ID (overrides PR_ID env var)",
 )
 @click.option(
@@ -73,22 +74,23 @@ def review(
 @click.argument(
     "urls",
     required=True,
-    type=str,
     nargs=-1,
-    help="URLs to crawl (can be used multiple times)",
 )
 @click.option(
     "--max-pages",
-    type=int,
+    type=click.IntRange(min=1),
     default=5,
     help="Maximum number of pages to crawl per URL (default: 5)",
 )
 @click.option(
-    "--max-depth", type=int, default=3, help="Maximum depth of the crawl (default: 3)"
+    "--max-depth",
+    type=click.IntRange(min=1),
+    default=3,
+    help="Maximum depth of the crawl (default: 3)",
 )
 @click.option(
     "--concurrent-tasks",
-    type=int,
+    type=click.IntRange(min=1),
     default=3,
     help="Maximum number of concurrent crawling tasks (default: 3)",
 )
@@ -100,25 +102,25 @@ def review(
 )
 @click.option(
     "--chunk-token-threshold",
-    type=int,
+    type=click.IntRange(min=1),
     default=1000,
     help="Chunk token threshold for large pages (default: 1000)",
 )
 @click.option(
     "--overlap-rate",
-    type=float,
+    type=click.FloatRange(min=0, max=1),
     default=0.1,
     help="Overlap rate between chunks (default: 0.1)",
 )
 @click.option(
     "--temperature",
-    type=float,
+    type=click.FloatRange(min=0, max=1),
     default=0.1,
     help="Temperature for LLM generation (default: 0.1)",
 )
 @click.option(
     "--max-tokens",
-    type=int,
+    type=click.IntRange(min=1),
     default=800,
     help="Maximum tokens for LLM generation (default: 800)",
 )
@@ -137,18 +139,23 @@ def review(
 )
 @click.option(
     "--keyword-weight",
-    type=float,
+    type=click.FloatRange(min=0, max=1),
     default=0.7,
     help="Weight for keyword relevance scoring (default: 0.7)",
 )
-def crawl(urls: List[str], **kwargs: Any) -> None:
-    """Run the web crawler."""
+def crawl(urls: tuple[str], **kwargs: Any) -> None:
+    """Run the web crawler.
+
+    Examples:
+      code-reviewer crawl https://example.com
+      code-reviewer crawl https://my-first-website.com https://my-second-website.com
+
+    """
     from code_reviewer_agent.services.crawler import CrawlService
 
     # Convert click's multiple keywords to a list
     kwargs["keywords"] = list(kwargs["keywords"])
-    kwargs["urls"] = urls
-    asyncio.run(CrawlService(**kwargs).main())
+    asyncio.run(CrawlService(urls=tuple(urls), **kwargs).main())
 
 
 if __name__ == "__main__":

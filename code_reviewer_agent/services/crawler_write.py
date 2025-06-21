@@ -1,9 +1,10 @@
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, LLMConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlResult, CrawlerRunConfig, LLMConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
 from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 from crawl4ai.extraction_strategy import LLMExtractionStrategy
+from crawl4ai.models import CrawlResultContainer
 from openai import OpenAI
 from postgrest._sync.request_builder import SyncRequestBuilder
 from pydantic import BaseModel, Field
@@ -11,7 +12,7 @@ from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
 
 from code_reviewer_agent.models.base_types import NbUrlsCrawled
 from code_reviewer_agent.models.crawler_agents import ConfigArgs
-from code_reviewer_agent.utils.rich_utils import print_debug, print_section
+from code_reviewer_agent.utils.rich_utils import print_debug, print_error, print_section
 
 
 class CrawledDocumentModel(BaseModel):
@@ -25,13 +26,16 @@ class CrawledDocumentModel(BaseModel):
 
 class CrawlerWritter:
     def __init__(self, args: ConfigArgs) -> None:
-        self.openai_client = args.get("openai_client")
-        self.supabase_table = args.get("supabase_table")
-        self.urls = list(args.get("urls", []))
+        self.openai_client = cast(OpenAI, args.get("openai_client"))
+        self.supabase_table = cast(
+            SyncRequestBuilder[Dict[str, Any]],
+            args.get("supabase_table"),
+        )
+
+        self.urls = tuple(args.get("urls", []))
         self.max_pages = int(args.get("max_pages", 10))
         self.max_depth = int(args.get("max_depth", 2))
         self.concurrent_tasks = int(args.get("concurrent_tasks", 5))
-        self._extraction_type = str(args.get("extraction_type", "schema"))
         self.chunk_token_threshold = int(args.get("chunk_token_threshold", 1000))
         self.overlap_rate = float(args.get("overlap_rate", 0.2))
         self.temperature = float(args.get("temperature", 0.2))
@@ -48,25 +52,7 @@ class CrawlerWritter:
             args.get("embedding_model", "text-embedding-3-small")
         )
 
-    @property
-    def openai_client(self) -> OpenAI:
-        return self._openai_client
-
-    @openai_client.setter
-    def openai_client(self, value: Any) -> None:
-        if not value or not isinstance(value, OpenAI):
-            raise ValueError("OpenAI client must be an instance of OpenAI")
-        self._openai_client: OpenAI = value
-
-    @property
-    def supabase_table(self) -> SyncRequestBuilder[Dict[str, Any]]:
-        return self._supabase_table
-
-    @supabase_table.setter
-    def supabase_table(self, value: Any) -> None:
-        if not value or not isinstance(value, SyncRequestBuilder):
-            raise ValueError("Supabase table must be an instance of SyncRequestBuilder")
-        self._supabase_table: SyncRequestBuilder[Dict[str, Any]] = value
+        self.extraction_type = str(args.get("extraction_type", "schema"))
 
     @property
     def extraction_type(self) -> str:
@@ -78,19 +64,22 @@ class CrawlerWritter:
             raise ValueError("Extraction type must be 'schema' or 'block'")
         self._extraction_type = value
 
-        self.extraction_strategy = LLMExtractionStrategy(
-            llm_config=LLMConfig(
-                provider=self.prefixed_provider,
-                api_token=self.api_token,
-                base_url=self.base_url,
-                temprature=self.temperature,
-                max_tokens=self.max_tokens,
-            ),
-            schema=CrawledDocumentModel,
-            extraction_type=self._extraction_type,
-            chunk_token_threshold=self.chunk_token_threshold,
-            overlap_rate=self.overlap_rate,
-        )
+        try:
+            self.extraction_strategy = LLMExtractionStrategy(
+                llm_config=LLMConfig(
+                    provider=self.prefixed_provider,
+                    api_token=self.api_token,
+                    base_url=self.base_url,
+                    temprature=self.temperature,
+                    max_tokens=self.max_tokens,
+                ),
+                schema=CrawledDocumentModel,
+                extraction_type=self._extraction_type,
+                chunk_token_threshold=self.chunk_token_threshold,
+                overlap_rate=self.overlap_rate,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to initialize extraction strategy: {e}")
 
     @property
     def extraction_strategy(self) -> LLMExtractionStrategy:
@@ -103,33 +92,6 @@ class CrawlerWritter:
                 "Extraction strategy must be an instance of LLMExtractionStrategy"
             )
         self._extraction_strategy = extraction_strategy
-
-        # Set up the browser configuration
-        browser_config = BrowserConfig(
-            headless=self.headless,
-            locale=self.locale,
-            timezone=self.timezone,
-        )
-
-        # Configure the crawling strategy with keywords if provided
-        strategy = BestFirstCrawlingStrategy(
-            max_pages=self.max_pages,
-            max_depth=self.max_depth,
-            max_concurrent_tasks=self.concurrent_tasks,
-        )
-
-        if self.keywords:
-            strategy.scorer = KeywordRelevanceScorer(
-                keywords=self.keywords,
-                weight=self.keyword_weight,
-            )
-
-        # Create the crawler
-        self._crawler = AsyncWebCrawler(
-            browser_config=browser_config,
-            crawling_strategy=strategy,
-            extraction_strategy=extraction_strategy,
-        )
 
     @property
     def crawler(self) -> AsyncWebCrawler:
@@ -155,43 +117,73 @@ class CrawlerWritter:
         ) as progress:
             # Create a task for overall progress
             main_task = progress.add_task(
-                "[cyan]Initializing crawler...", total=len(self.urls)
+                "[cyan]Initializing crawler...",
+                total=len(self.urls),
             )
-            progress.update(main_task, description="[cyan]Setting up extraction...")
 
-            i = 0
             results = []
             successful_crawls = 0
             try:
+                # Set up the browser configuration
+                browser_config = BrowserConfig(
+                    headless=self.headless,
+                    # locale=self.locale,
+                    # timezone=self.timezone,
+                )
+
+                # Configure the crawling strategy with keywords if provided
+                strategy = BestFirstCrawlingStrategy(
+                    max_pages=self.max_pages,
+                    max_depth=self.max_depth,
+                    # max_concurrent_tasks=self.concurrent_tasks,
+                )
+
+                # if self.keywords:
+                #     strategy.scorer = KeywordRelevanceScorer(
+                #         keywords=self.keywords,
+                #         weight=self.keyword_weight,
+                #     )
+
+                # Create the crawler
+                self._crawler = AsyncWebCrawler(
+                    config=browser_config,
+                    # crawler_strategy=strategy,
+                    # extraction_strategy=extraction_strategy,
+                )
+
+                config = CrawlerRunConfig(
+                    stream=True,
+                    # max_pages=self.max_pages,
+                    # max_depth=self.max_depth,
+                    # max_concurrent_tasks=self.concurrent_tasks,
+                )
                 async for result in await self.crawler.arun_many(
                     urls=self.urls,
-                    config=CrawlerRunConfig(
-                        max_pages=self.max_pages,
-                        max_depth=self.max_depth,
-                        max_concurrent_tasks=self.concurrent_tasks,
-                    ),
+                    config=config,
                 ):
-                    i += 1
-                    url = self.urls[i]
+                    url = result.url
                     progress.update(
                         main_task,
-                        description=f"[cyan]Processing URL {i}/{len(self.urls)}",
+                        description=f"[cyan]Processing URL {url}",
                     )
 
-                    if not result or not hasattr(result, "extracted_contents"):
+                    if not result or not result.success:
                         # Update main progress
-                        progress.update(main_task, advance=1)
+                        print_error(f"Failed to crawl URL {url}: {getattr(result, 'error_message', 'Unknown error')}")
                         continue
 
                     try:
                         # Process each extracted document
-                        docs = result.extracted_contents
-                        for doc in docs:
+                        for doc in result:
                             doc_data = (
                                 doc.model_dump()
                                 if hasattr(doc, "model_dump")
                                 else dict(doc)
                             )
+                            print(type(doc_data))
+                            print(doc_data.keys())
+                            print(type(doc_data["extracted_content"]))
+                            print(len(doc_data["extracted_content"]))
                             doc_data["url"] = url
                             document_title = doc_data.get("title", "Untitled")
 
@@ -203,7 +195,9 @@ class CrawlerWritter:
                                 )
                                 # Store the document with progress tracking
                                 success = await self.store_doc(
-                                    doc_data, progress, doc_task_id
+                                    doc_data,
+                                    progress,
+                                    doc_task_id,
                                 )
                                 if success:
                                     results.append(doc_data)
@@ -217,21 +211,18 @@ class CrawlerWritter:
                                     )
                                 progress.update(doc_task_id, description=description)
                             except Exception as e:
-                                progress.update(
-                                    doc_task_id,
-                                    description=f"[red]! Storing document failed: {str(e)}",
-                                )
+                                print_error(f"! Storing document failed: {str(e)}")
+                                raise
                             finally:
                                 progress.update(doc_task_id, completed=float(1))
-                    except Exception:
+                    except Exception as e:
+                        print_error(f"Error storing document: {str(e)}")
                         raise
                     finally:
                         # Update main progress
                         progress.update(main_task, advance=1)
             except Exception as e:
-                progress.update(
-                    main_task, description=f"[red]! Error crawling {url}: {str(e)}"
-                )
+                print_error(f"Error crawling {url}: {str(e)}")
             finally:
                 if successful_crawls == len(self.urls):
                     description = "[green]✓ "

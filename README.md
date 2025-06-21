@@ -59,11 +59,20 @@ pip install -e '.[dev,crawler,langfuse]'
 pip install -e .
 
 # Install additional dependencies as needed
+pip install -e '.[dev]'  # For development
 pip install -e '.[crawler]'  # For web crawling functionality
 pip install -e '.[langfuse]'  # For Langfuse observability
 ```
 
-4. Configure the application:
+4. Init playwright:
+```bash
+# If missing any dependencies
+npx playwright install-deps
+# Init playwright
+playwright install
+```
+
+5. Configure the application:
 Copy the default_config.yaml file to ~/.config/code-reviewer/config.yaml and modify it as needed.
 
 ## 🚀 Usage

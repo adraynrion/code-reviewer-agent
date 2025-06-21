@@ -61,10 +61,6 @@ class EmbeddingModel(StringValidator):
     pass
 
 
-class ExtractionType(StringValidator):
-    pass
-
-
 class Filename(StringValidator):
     pass
 
@@ -93,22 +89,6 @@ class LLM(StringValidator):
     pass
 
 
-class Locale(StringValidator):
-    def __new__(cls, value: str) -> "Locale":
-        formated_value = value.lower().strip()
-
-        from babel import Locale as BabelLocale
-
-        try:
-            BabelLocale.parse(formated_value, sep="-")
-        except ValueError:
-            raise ValueError(
-                f"Invalid locale. Must be a valid BCP 47 language tag. Got {formated_value}"
-            )
-
-        return str.__new__(cls, value)
-
-
 class ModelProvider(StringValidator):
     pass
 
@@ -129,20 +109,6 @@ class SupabaseUrl(StringValidator):
     pass
 
 
-class Timezone(StringValidator):
-    def __new__(cls, value: str) -> "Timezone":
-        formated_value = value.lower().strip()
-
-        from dateutil.tz import gettz
-
-        if gettz(formated_value) is None:
-            raise ValueError(
-                f"Invalid timezone. Must be a valid timezone string. Got {formated_value}"
-            )
-
-        return str.__new__(cls, value)
-
-
 class Token(StringValidator):
     pass
 
@@ -154,43 +120,11 @@ class Url(StringValidator):
 ########## PositiveIntegerValidator ##########
 
 
-class ChunkTokenThreshold(PositiveIntegerValidator):
-    pass
-
-
-class ConcurrentTasks(PositiveIntegerValidator):
-    pass
-
-
-class KeywordWeight(PositiveFloatValidator):
-    pass
-
-
-class MaxDepth(PositiveIntegerValidator):
-    pass
-
-
-class MaxPages(PositiveIntegerValidator):
-    pass
-
-
-class MaxTokens(PositiveIntegerValidator):
-    pass
-
-
 class NbUrlsCrawled(PositiveIntegerValidator):
     pass
 
 
-class OverlapRate(PositiveFloatValidator):
-    pass
-
-
 class RequestId(PositiveIntegerValidator):
-    pass
-
-
-class Temperature(PositiveFloatValidator):
     pass
 
 
@@ -225,10 +159,6 @@ class FilesPath(Tuple[str]):
     pass
 
 
-class Keywords(List[str]):
-    pass
-
-
 class Languages(Dict[str, Set[str]]):
     pass
 
@@ -237,8 +167,8 @@ class LanguageTuple(Tuple[str]):
     pass
 
 
-class Urls(List[str]):
-    def __new__(cls, value: List[str]) -> "Urls":
+class Urls(tuple[str]):
+    def __new__(cls, value: tuple[str]) -> "Urls":
         if not value or len(value) == 0:
             raise ValueError("At least one URL is required")
         return super().__new__(cls)
