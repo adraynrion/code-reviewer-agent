@@ -1,0 +1,65 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit[toml] semgrep
+        pip install -e '.[dev,crawler,langfuse]'
+
+    - name: Run safety check (dependency vulnerabilities)
+      run: |
+        safety check --json --output safety-report.json || true
+
+    - name: Run bandit (Python security issues)
+      run: |
+        bandit -r code_reviewer_agent/ -f json -o bandit-report.json || true
+
+    - name: Run semgrep (SAST)
+      run: |
+        semgrep --config=auto --json --output=semgrep-report.json code_reviewer_agent/ || true
+
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-scan-results
+        path: |
+          safety-report.json
+          bandit-report.json
+          semgrep-report.json
+
+    - name: Create security summary
+      if: always()
+      run: |
+        echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "### Safety (Dependency Vulnerabilities)" >> $GITHUB_STEP_SUMMARY
+        if [ -f safety-report.json ]; then
+          echo "- Safety scan completed" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "### Bandit (Python Security Issues)" >> $GITHUB_STEP_SUMMARY
+        if [ -f bandit-report.json ]; then
+          echo "- Bandit scan completed" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "### Semgrep (SAST)" >> $GITHUB_STEP_SUMMARY
+        if [ -f semgrep-report.json ]; then
+          echo "- Semgrep scan completed" >> $GITHUB_STEP_SUMMARY
+        fi
