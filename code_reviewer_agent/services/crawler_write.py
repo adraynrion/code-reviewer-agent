@@ -24,7 +24,7 @@ class CrawledDocumentModel(BaseModel):
     )
 
 
-class CrawlerWritter:
+class CrawlerWriter:
     def __init__(self, args: ConfigArgs) -> None:
         self.openai_client = cast(OpenAI, args.get("openai_client"))
         self.supabase_table = cast(
@@ -70,7 +70,7 @@ class CrawlerWritter:
                     provider=self.prefixed_provider,
                     api_token=self.api_token,
                     base_url=self.base_url,
-                    temprature=self.temperature,
+                    temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 ),
                 schema=CrawledDocumentModel,

@@ -7,7 +7,7 @@ from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import ConfigArgs
 from code_reviewer_agent.services.crawler import Urls
 from code_reviewer_agent.services.crawler_read import CrawlerReader
-from code_reviewer_agent.services.crawler_write import CrawlerWritter
+from code_reviewer_agent.services.crawler_write import CrawlerWriter
 from supabase import create_client
 
 
@@ -42,11 +42,11 @@ class CrawlerAgents:
             }
         )
 
-        self._writter = CrawlerWritter(args)
+        self._writter = CrawlerWriter(args)
         self._reader = CrawlerReader(args)
 
     @property
-    def writter(self) -> CrawlerWritter:
+    def writter(self) -> CrawlerWriter:
         return self._writter
 
     @property
