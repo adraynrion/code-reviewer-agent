@@ -40,7 +40,7 @@ jobs:
     - name: Run code quality checks
       run: make all
 
-    - name: Run tests with coverage
+    - name: Run tests with coverage (min 75% required)
       run: make test-cov
 
     - name: Upload coverage to codecov
