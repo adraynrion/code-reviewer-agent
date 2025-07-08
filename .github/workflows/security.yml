@@ -38,7 +38,7 @@ jobs:
         semgrep --config=auto --json --output=semgrep-report.json code_reviewer_agent/ || true
 
     - name: Upload security scan results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: security-scan-results
