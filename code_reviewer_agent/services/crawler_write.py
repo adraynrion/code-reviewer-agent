@@ -1,10 +1,8 @@
 from typing import Any, Dict, cast
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlResult, CrawlerRunConfig, LLMConfig
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, LLMConfig
 from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
-from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
 from crawl4ai.extraction_strategy import LLMExtractionStrategy
-from crawl4ai.models import CrawlResultContainer
 from openai import OpenAI
 from postgrest._sync.request_builder import SyncRequestBuilder
 from pydantic import BaseModel, Field
@@ -169,7 +167,9 @@ class CrawlerWriter:
 
                     if not result or not result.success:
                         # Update main progress
-                        print_error(f"Failed to crawl URL {url}: {getattr(result, 'error_message', 'Unknown error')}")
+                        print_error(
+                            f"Failed to crawl URL {url}: {getattr(result, 'error_message', 'Unknown error')}"
+                        )
                         continue
 
                     try:

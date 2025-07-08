@@ -1,6 +1,9 @@
 import requests
 from requests.exceptions import RequestException
 
+# Default timeout for HTTP requests in seconds
+DEFAULT_TIMEOUT = 30
+
 from code_reviewer_agent.models.base_types import CodeDiff, GitHubToken
 from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
@@ -36,7 +39,9 @@ class GitHubReviewerService(RepositoryService):
         try:
             print_info("Retrieving commits...")
             pr_metadata_url = f"https://api.github.com/repos/{self.repository}/pulls/{self.request_id}/commits"
-            resp = requests.get(pr_metadata_url, headers=headers)
+            resp = requests.get(
+                pr_metadata_url, headers=headers, timeout=DEFAULT_TIMEOUT
+            )
             if resp.status_code != 200:
                 print_error(
                     f"Failed to fetch pull request commits: {resp.status_code} {resp.text}"
@@ -48,7 +53,7 @@ class GitHubReviewerService(RepositoryService):
 
             print_info("Retrieving changed files...")
             url = f"https://api.github.com/repos/{self.repository}/pulls/{self.request_id}/files"
-            resp = requests.get(url, headers=headers)
+            resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
             if resp.status_code != 200:
                 print_error(
                     f"Failed to fetch pull request files: {resp.status_code} {resp.text}"
@@ -103,6 +108,7 @@ class GitHubReviewerService(RepositoryService):
             f"https://api.github.com/repos/{self.repository}/pulls/{self.request_id}/comments",
             headers=headers,
             json=data,
+            timeout=DEFAULT_TIMEOUT,
         )
         if resp.status_code != 201:
             raise Exception(
@@ -127,7 +133,9 @@ class GitHubReviewerService(RepositoryService):
 
         label_url = f"https://api.github.com/repos/{self.repository}/issues/{self.request_id}/labels"
         label_data = {"labels": [self.reviewed_label]}
-        resp = requests.post(label_url, headers=headers, json=label_data)
+        resp = requests.post(
+            label_url, headers=headers, json=label_data, timeout=DEFAULT_TIMEOUT
+        )
         if resp.status_code != 200:
             raise Exception(f"Failed to set label to PR: {resp.text}")
         print_success(f"Successfully set label on PR!")
@@ -135,7 +143,7 @@ class GitHubReviewerService(RepositoryService):
         # ===== Set PR reviewer as the owner of the GITHUB_TOKEN =====
         print_info(f"Retrieving GITHUB_TOKEN owner...")
         user_url = "https://api.github.com/user"
-        resp = requests.get(user_url, headers=headers)
+        resp = requests.get(user_url, headers=headers, timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             raise Exception(
                 f"Failed to get authenticated user: {resp.status_code} - {resp.text}"
@@ -150,7 +158,9 @@ class GitHubReviewerService(RepositoryService):
         print_info(f"Setting reviewer as {token_owner} on PR...")
         review_url = f"https://api.github.com/repos/{self.repository}/pulls/{self.request_id}/requested_reviewers"
         review_data = {"reviewers": [token_owner]}
-        resp = requests.post(review_url, headers=headers, json=review_data)
+        resp = requests.post(
+            review_url, headers=headers, json=review_data, timeout=DEFAULT_TIMEOUT
+        )
         if resp.status_code != 201:
             raise Exception(
                 f"Failed to set reviewer on PR: {resp.status_code} - {resp.text}"

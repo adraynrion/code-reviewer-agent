@@ -168,7 +168,7 @@ class LanguageTuple(Tuple[str]):
 
 
 class Urls(tuple[str]):
-    def __new__(cls, value: tuple[str]) -> "Urls":
+    def __new__(cls, value: tuple[str, ...]) -> "Urls":
         if not value or len(value) == 0:
             raise ValueError("At least one URL is required")
-        return super().__new__(cls)
+        return super().__new__(cls, value)

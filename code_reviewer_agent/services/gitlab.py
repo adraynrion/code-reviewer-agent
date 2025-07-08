@@ -1,6 +1,9 @@
 import requests
 from requests.exceptions import RequestException
 
+# Default timeout for HTTP requests in seconds
+DEFAULT_TIMEOUT = 30
+
 from code_reviewer_agent.models.base_types import CodeDiff, GitLabApiUrl, GitLabToken
 from code_reviewer_agent.models.pydantic_config_models import ReviewerConfig
 from code_reviewer_agent.models.pydantic_reviewer_models import CodeReviewResponse
@@ -41,7 +44,9 @@ class GitLabReviewerService(RepositoryService):
         try:
             print_info("Retrieving commits...")
             mr_metadata_url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}"
-            resp = requests.get(mr_metadata_url, headers=headers)
+            resp = requests.get(
+                mr_metadata_url, headers=headers, timeout=DEFAULT_TIMEOUT
+            )
             if resp.status_code != 200:
                 print_error(
                     f"Failed to fetch merge request commits: {resp.status_code} {resp.text}"
@@ -53,7 +58,7 @@ class GitLabReviewerService(RepositoryService):
 
             print_info("Retrieving changed files...")
             url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}/changes"
-            resp = requests.get(url, headers=headers)
+            resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
             if resp.status_code != 200:
                 print_error(
                     f"Failed to fetch merge request files: {resp.status_code} {resp.text}"
@@ -114,6 +119,7 @@ class GitLabReviewerService(RepositoryService):
             f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}/discussions",
             headers=headers,
             json=data,
+            timeout=DEFAULT_TIMEOUT,
         )
         if resp.status_code != 201:
             raise Exception(
@@ -137,7 +143,7 @@ class GitLabReviewerService(RepositoryService):
         # TODO: Retrieve existing label before POST (it replace every existing labels)
 
         label_url = f"{self.gitlab_api_url}/projects/{self.repository}/merge_requests/{self.request_id}?add_labels={self.reviewed_label}"
-        resp = requests.put(label_url, headers=headers)
+        resp = requests.put(label_url, headers=headers, timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             raise Exception(f"Failed to set label to MR: {resp.text}")
         print_success(f"Successfully set label on MR!")
@@ -145,7 +151,7 @@ class GitLabReviewerService(RepositoryService):
         # ===== Set MR reviewer as the owner of the GITLAB_TOKEN =====
         print_info(f"Retrieving GITLAB_TOKEN owner...")
         user_url = f"{self.gitlab_api_url}/user"
-        resp = requests.get(user_url, headers=headers)
+        resp = requests.get(user_url, headers=headers, timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             raise Exception(
                 f"Failed to get authenticated user: {resp.status_code} - {resp.text}"
@@ -167,7 +173,7 @@ class GitLabReviewerService(RepositoryService):
             f"{self.repository}/merge_requests/{self.request_id}"
             f"?reviewer_ids%5B%5D={user_id}"
         )
-        resp = requests.put(review_url, headers=headers)
+        resp = requests.put(review_url, headers=headers, timeout=DEFAULT_TIMEOUT)
         if resp.status_code != 200:
             raise Exception(
                 f"Failed to set reviewer on MR: {resp.status_code} - {resp.text}"

@@ -51,7 +51,11 @@ def print_section(text: str, emoji: str = "") -> None:
     """
     prefix = f"{emoji} " if emoji else ""
     console.print(f"[bold cyan]{prefix}{text}")
-    console.print("-" * (len(text) + (len(emoji) + 1 if emoji else 0)))
+    # Calculate display width: most emojis have display width of 2
+    emoji_display_width = (
+        2 if emoji and len(emoji.encode()) > len(emoji) else len(emoji)
+    )
+    console.print("-" * (len(text) + (emoji_display_width + 1 if emoji else 0)))
 
 
 def print_success(text: str) -> None:
