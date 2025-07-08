@@ -116,7 +116,7 @@ clean: clean-all
 ############################################
 # Virtual environment
 ############################################
-.PHONY: venv clean-venv reset-venv
+.PHONY: venv install-venv clean-venv reset-venv
 
 # Create a virtual environment
 venv:
@@ -124,18 +124,26 @@ venv:
 	@python -m venv .venv
 	@echo "✅ Virtual environment created"
 
+# Install pip dependencies in virtual environment using uv
+install-venv:
+	@echo "🐍 Checking for active virtual environment..."
+	@if [ -z "$(command -v uv)" ]; then \
+		echo "Error: No virtual environment is active. Activate one and try again." >&2; \
+		exit 1; \
+	fi
+	@echo "🐍 Installing virtual environment..."
+	@uv pip install --upgrade pip
+	@uv pip install -e '.[dev,crawler,langfuse]'
+	@echo "✅ Virtual environment installed"
+
 # Clean virtual environment
 clean-venv:
-	@echo "🗑️  Cleaning virtual environment..."
+	@echo "🗑️ Cleaning virtual environment..."
 	@rm -rf .venv
 	@echo "✅ Virtual environment cleaned"
 
 # Reset virtual environment
-reset-venv: clean-venv venv
-	@echo "🔄 Resetting virtual environment..."
-	@.venv/bin/pip install --upgrade pip
-	@.venv/bin/pip install -e '.[dev,crawler,langfuse]'
-	@echo "✅ Virtual environment reset"
+reset-venv: clean-venv venv install-venv
 
 ############################################
 # Version Management
