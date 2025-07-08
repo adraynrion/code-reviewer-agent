@@ -4,6 +4,12 @@ omit =
     */tests/*
     *__init__.py
     */setup.py
+    # External services
+    */services/github.py
+    */services/gitlab.py
+    */services/crawler*.py
+    # Configuration
+    */config/*.py
 
 [report]
 # Show which statements are covered or missing in the final report

@@ -6,7 +6,6 @@ from typing import Any
 
 import click
 
-from code_reviewer_agent.models.base_types import Urls
 from code_reviewer_agent.services.code_reviewer import (
     CodeReviewService,
     InstructionsPath,
@@ -155,7 +154,7 @@ def crawl(urls: tuple[str], **kwargs: Any) -> None:
 
     # Convert click's multiple keywords to a list
     kwargs["keywords"] = list(kwargs["keywords"])
-    asyncio.run(CrawlService(urls=tuple(urls), **kwargs).main())
+    asyncio.run(CrawlService(urls=urls, **kwargs).main())
 
 
 if __name__ == "__main__":

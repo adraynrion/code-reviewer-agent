@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 from rich.table import Table
@@ -48,20 +48,38 @@ class ConfigFilePath:
 class Config:
     """Configuration singleton."""
 
-    _instance = None
+    _instance: Optional["Config"] = None
+    _initialized: bool
+    _debug: bool
+    _schema: Optional[ConfigModel]
 
     def __new__(cls, *args: Any, **kwargs: Any) -> "Config":
         if not cls._instance:
             cls._instance = super(Config, cls).__new__(cls)
+            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self, **kwargs: Any) -> None:
+        if self._initialized:
+            return
+        self._initialized = True
+
+        # Initialize default values
+        self._debug = False
+        self._schema = None
+
         self._file = ConfigFilePath()
         self._load_config_from_file()
         self._update_config(**kwargs)
 
         os.environ["DEBUG"] = self.debug.__str__()
-        console.print(self.to_table())
+        # Print config table if schema is available
+        self._print_config_table()
+
+    def _print_config_table(self) -> None:
+        """Print the configuration table if schema is available."""
+        if self._schema is not None:
+            console.print(self.to_table())
 
     @property
     def file(self) -> Path:
@@ -69,6 +87,8 @@ class Config:
 
     @property
     def schema(self) -> ConfigModel:
+        if self._schema is None:
+            raise RuntimeError("Config schema not initialized")
         return self._schema
 
     @property
@@ -168,6 +188,9 @@ class Config:
         self._debug = self._schema.logging.debug
 
     def _update_config(self, **kwargs: Any) -> None:
+        if self._schema is None:
+            return
+
         args = kwargs
 
         ##### Crawler #####

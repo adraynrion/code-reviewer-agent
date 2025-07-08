@@ -1,5 +1,5 @@
 import sys
-from typing import Any, cast
+from typing import Any
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import Urls
@@ -13,10 +13,10 @@ from code_reviewer_agent.utils.rich_utils import (
 
 
 class CrawlService(BaseService):
-    def __init__(self, urls: Urls, **kwargs: Any) -> None:
+    def __init__(self, urls: tuple[str], **kwargs: Any) -> None:
         super().__init__(Config(kwargs=kwargs))
 
-        self.urls = urls
+        self.urls = Urls(urls)
         self._agents = CrawlerAgents(self.config, self.urls)
 
     @property
