@@ -196,7 +196,9 @@ class TestLangfuseModel:
 
     @patch("code_reviewer_agent.utils.langfuse.Langfuse")
     @patch("code_reviewer_agent.utils.langfuse.logfire")
-    def test_enable_langfuse_general_exception(self, mock_logfire, mock_langfuse) -> None:
+    def test_enable_langfuse_general_exception(
+        self, mock_logfire, mock_langfuse
+    ) -> None:
         """Test enabling Langfuse with general exception."""
         mock_langfuse.side_effect = Exception("Connection failed")
 

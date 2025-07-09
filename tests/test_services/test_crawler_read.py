@@ -44,7 +44,9 @@ class TestCrawlerReader:
 
     @patch("code_reviewer_agent.services.crawler_read.print_info")
     @patch("code_reviewer_agent.services.crawler_read.print_success")
-    def test_search_documents_success(self, mock_print_success, mock_print_info) -> None:
+    def test_search_documents_success(
+        self, mock_print_success, mock_print_info
+    ) -> None:
         """Test successful document search."""
         args = ConfigArgs(
             {
