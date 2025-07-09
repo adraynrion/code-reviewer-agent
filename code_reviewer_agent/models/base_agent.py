@@ -1,12 +1,10 @@
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers import Provider
-from pydantic_ai.providers.google import GoogleProvider
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from code_reviewer_agent.config.config import Config
 from code_reviewer_agent.models.base_types import LLM, ApiKey, BaseUrl, ModelProvider
+from code_reviewer_agent.models.provider_factory import ProviderFactory
 from code_reviewer_agent.models.pydantic_config_models import LLMConfig
 from code_reviewer_agent.models.supabase import SupabaseModel
 
@@ -50,21 +48,52 @@ class LLMDict:
 
 
 class AiModel:
-    _provider: Provider
-    _model: OpenAIModel | GoogleModel
+    """Base class for AI model configuration and management.
+
+    This class handles AI model configuration with separated concerns:
+    - Configuration management (single responsibility)
+    - Provider creation (delegated to factory)
+    - Model creation (delegated to factory)
+
+    """
 
     def __init__(self, config: Config) -> None:
         self._config = config
         self._debug = config.schema.logging.debug
 
+        # Extract configuration values
         llm = config.schema.reviewer.llm
         self._api_key = ApiKey(llm.api_key)
         self._base_url = BaseUrl(llm.base_url)
-        self.provider = ModelProvider(llm.provider)
-        self.llm = LLM(llm.model_name)
+        self._provider_type = ModelProvider(llm.provider)
+        self._llm = LLM(llm.model_name)
 
+        # Setup provider and model using factory
+        self._setup_provider_and_model()
+
+        # Initialize other components
         self._llm_config = LLMDict(llm)
         self.supabase = SupabaseModel(config)
+
+    def _setup_provider_and_model(self) -> None:
+        """Setup provider and model using factory pattern."""
+        # Validate required configuration
+        if not self._base_url or not self._api_key:
+            raise ValueError("Base URL and API key must be set before provider")
+
+        # Create provider using factory
+        self._provider = ProviderFactory.create_provider(
+            self._provider_type,
+            self._api_key,
+            self._base_url if self._provider_type in ("OpenAI", "TogetherAI") else None,
+        )
+
+        # Create model using factory
+        self._model = ProviderFactory.create_model(
+            self._llm,
+            self._provider,
+            self._provider_type,
+        )
 
     @property
     def debug(self) -> bool:
@@ -80,55 +109,22 @@ class AiModel:
 
     @property
     def provider(self) -> Provider:
+        """Get the AI provider."""
         return self._provider
-
-    @provider.setter
-    def provider(self, value: ModelProvider) -> None:
-        if not self.base_url or not self.api_key:
-            raise ValueError("Base URL and API key must be set before provider")
-
-        if value not in ("OpenAI", "TogetherAI", "OpenRouter", "Google", "Ollama"):
-            raise ValueError(
-                "Provider must be one of: OpenAI, TogetherAI, OpenRouter, Google, Ollama"
-            )
-
-        if value == "OpenAI" or value == "TogetherAI":
-            self._provider = OpenAIProvider(
-                base_url=self.base_url, api_key=self.api_key
-            )
-        elif value == "OpenRouter":
-            self._provider = OpenRouterProvider(api_key=self.api_key)
-        elif value == "Google":
-            self._provider = GoogleProvider(api_key=self.api_key)
 
     @property
     def llm(self) -> LLM:
+        """Get the LLM model name."""
         return self._llm
-
-    @llm.setter
-    def llm(self, value: LLM) -> None:
-        if not self.provider:
-            raise ValueError("Provider must be set before LLM")
-
-        self._llm = value
-
-        if self.provider in ("OpenAI", "TogetherAI", "OpenRouter"):
-            self._model = OpenAIModel(
-                model_name=self.llm,
-                provider=self.provider,
-            )
-        elif self.provider == "Google":
-            self._model = GoogleModel(
-                model_name=self.llm,
-                provider=self.provider,
-            )
 
     @property
     def model(self) -> OpenAIModel | GoogleModel:
+        """Get the AI model."""
         return self._model
 
     @property
     def llm_config(self) -> LLMDict:
+        """Get the LLM configuration."""
         return self._llm_config
 
 

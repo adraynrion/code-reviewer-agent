@@ -42,16 +42,49 @@ class RepositoryService(ABC):
     def diffs(self, files: Files) -> None:
         """Transform given Files to a Tuple of FilesDiff."""
         print_section("Processing files", "📄")
+
+        # Detect languages for all files
+        self._process_file_languages(files)
+
+        # Process each file and create diffs
+        files_diff = self._process_files_for_diffs(files)
+
+        # Validate results
+        if not files_diff:
+            raise ValueError("No languages detected for files to review")
+
+        print_success("Successfully retrieved code diffs by file!")
+        self._diffs = FilesDiff(tuple(files_diff))
+
+    def _process_file_languages(self, files: Files) -> None:
+        """Process and detect languages for files.
+
+        Args:
+            files: List of files to process
+
+        """
         filename_list = FilesPath(
             tuple(str(file.get("filename", "")) for file in files)
         )
         self.languages = LanguageUtils.get_file_languages(filename_list)
 
+    def _process_files_for_diffs(self, files: Files) -> list[dict]:
+        """Process files and create diff objects.
+
+        Args:
+            files: List of files to process
+
+        Returns:
+            List of diff dictionaries
+
+        """
         print_info("Retrieving code diffs by file...")
         files_diff = []
+
         for file in files:
             filename: str = file.get("filename", "")
             patch: str = file.get("patch", "")
+
             if not self.languages.get(filename):
                 print_warning(
                     f"Skipping file analysis {filename}: no languages detected"
@@ -65,15 +98,9 @@ class RepositoryService(ABC):
                 "patch": patch,
             }
             files_diff.append(diff)
-
             print_debug(f"Retrieved code diffs for file: {filename}")
 
-        # Check if there are no files to review
-        if not files_diff:
-            raise ValueError("No languages detected for files to review")
-
-        print_success("Successfully retrieved code diffs by file!")
-        self._diffs = FilesDiff(tuple(files_diff))
+        return files_diff
 
     @property
     def languages(self) -> Languages:
